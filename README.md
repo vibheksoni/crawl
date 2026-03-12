@@ -1,10 +1,20 @@
-# crawl
+<p align="center">
+  <img src="assets/crawl.png" alt="crawl" width="320">
+</p>
 
-Async web search, fetch, crawl, and screenshot tooling with three integration layers:
+<h1 align="center">crawl</h1>
 
-- `sdk`: reusable Python functions for embedding in other services
-- `mcp`: FastMCP wrapper for agent workflows
-- `cli`: raw command-line interface for direct usage
+<p align="center">
+  Async web search, fetch, crawl, and screenshot tooling with three integration layers.
+</p>
+
+<p align="center">
+  <code>sdk</code> reusable Python functions for embedding in other services
+  <br>
+  <code>mcp</code> FastMCP wrapper for agent workflows
+  <br>
+  <code>cli</code> raw command-line interface for direct usage
+</p>
 
 ## Structure
 
