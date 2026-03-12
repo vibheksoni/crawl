@@ -55,9 +55,11 @@ def parse_page_meta(html: str, page_url: str, base_domain: str) -> dict:
     description = desc_tag.get("content", "") if desc_tag else ""
 
     links = []
+    seen_links = set()
     for anchor in soup.find_all("a", href=True):
         full_url = strip_fragment(urljoin(page_url, anchor["href"]))
-        if urlparse(full_url).netloc == base_domain:
+        if urlparse(full_url).netloc == base_domain and full_url not in seen_links:
+            seen_links.add(full_url)
             links.append(full_url)
 
     return {"title": title, "description": description, "links": links}

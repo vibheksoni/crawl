@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import crawl, fetch, screenshot, websearch
+from crawl.sdk import benchmark_fast_crawl, crawl, fetch, screenshot, websearch
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("url", help="Start URL.")
     crawl_parser.add_argument("--max-pages", type=int, default=10, dest="max_pages")
     crawl_parser.add_argument("--mode", choices=["fast", "auto"], default="auto")
+    crawl_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -37,6 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot_parser.add_argument("--height", type=int, default=-1)
     screenshot_parser.add_argument("--no-full-page", action="store_true", dest="no_full_page")
     screenshot_parser.add_argument("--output", default="screenshot.jpg", help="Output image path.")
+
+    benchmark_parser = subparsers.add_parser("benchmark", help="Benchmark the HTTP-only crawler.")
+    benchmark_parser.add_argument("url", help="Start URL.")
+    benchmark_parser.add_argument("--max-pages", type=int, default=10, dest="max_pages")
+    benchmark_parser.add_argument("--samples", type=int, default=3)
+    benchmark_parser.add_argument(
+        "--concurrency",
+        type=int,
+        nargs="+",
+        default=[1, 2, 4],
+        dest="concurrency_levels",
+    )
 
     return parser
 
@@ -57,7 +70,12 @@ async def run_command(args: argparse.Namespace):
         return await fetch(args.url, output_format=args.output_format)
 
     if args.command == "crawl":
-        return await crawl(args.url, max_pages=args.max_pages, mode=args.mode)
+        return await crawl(
+            args.url,
+            max_pages=args.max_pages,
+            mode=args.mode,
+            max_concurrency=args.max_concurrency,
+        )
 
     if args.command == "screenshot":
         return await screenshot(
@@ -65,6 +83,14 @@ async def run_command(args: argparse.Namespace):
             width=args.width,
             height=args.height,
             full_page=not args.no_full_page,
+        )
+
+    if args.command == "benchmark":
+        return await benchmark_fast_crawl(
+            args.url,
+            max_pages=args.max_pages,
+            concurrency_levels=args.concurrency_levels,
+            samples=args.samples,
         )
 
     raise ValueError(f"Unsupported command: {args.command}")

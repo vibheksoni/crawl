@@ -52,8 +52,9 @@ Run from the repo root:
 ```powershell
 python cli.py websearch "python async browser automation" --max-results 5 --pages 1
 python cli.py fetch https://example.com --format text
-python cli.py crawl https://example.com --max-pages 3 --mode fast
+python cli.py crawl https://example.com --max-pages 3 --mode fast --max-concurrency 4
 python cli.py screenshot https://example.com --output example.jpg
+python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8
 ```
 
 After installation, you can also use:
@@ -80,5 +81,6 @@ crawl-mcp
 
 - `websearch`: opens Google in a browser session and extracts organic results, videos, People Also Ask items, and AI Overview text
 - `fetch`: loads a page and returns markdown or plain-text content
-- `crawl`: walks a site with a browser-assisted or HTTP-only strategy
-- `screenshot`: captures a page and returns a compressed JPEG image
+- `crawl`: walks a site with a browser-assisted or HTTP-only strategy and configurable HTTP concurrency
+- `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
+- `benchmark`: measures the HTTP-only crawler across multiple concurrency settings

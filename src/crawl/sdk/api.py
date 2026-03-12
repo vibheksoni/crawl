@@ -1,8 +1,10 @@
 """Reusable SDK operations for web search, fetch, crawl, and screenshot."""
 
+import asyncio
 import io
 import os
 import tempfile
+from collections import deque
 from typing import Literal
 from urllib.parse import quote_plus, urlparse
 
@@ -130,13 +132,46 @@ async def request_page(session: AsyncSession, url: str) -> str:
     return response.text
 
 
-async def crawl(url: str, max_pages: int = 10, mode: Literal["fast", "auto"] = "auto") -> dict:
+async def crawl_one_page(session: AsyncSession, url: str, base_domain: str) -> tuple[dict, list[str]]:
+    """Fetch and parse a single crawled page.
+
+    Args:
+        session: Async HTTP session.
+        url: Page URL to fetch.
+        base_domain: Domain used to filter same-site links.
+
+    Returns:
+        Tuple containing the result payload and discovered links.
+    """
+    try:
+        html = await request_page(session, url)
+        meta = parse_page_meta(html, url, base_domain)
+        return (
+            {
+                "url": url,
+                "title": meta["title"],
+                "description": meta["description"],
+                "links_found": len(meta["links"]),
+            },
+            meta["links"],
+        )
+    except Exception as error:
+        return {"url": url, "error": str(error)}, []
+
+
+async def crawl(
+    url: str,
+    max_pages: int = 10,
+    mode: Literal["fast", "auto"] = "auto",
+    max_concurrency: int = 4,
+) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
     Args:
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
         mode: Crawl strategy, either ``fast`` or ``auto``.
+        max_concurrency: Maximum parallel HTTP requests.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -144,9 +179,11 @@ async def crawl(url: str, max_pages: int = 10, mode: Literal["fast", "auto"] = "
     start_url = strip_fragment(url)
     base_domain = urlparse(url).netloc
     visited = set()
-    to_visit = {start_url}
+    queued = {start_url}
+    to_visit = deque([start_url])
     results = []
     cookies = {}
+    max_concurrency = max(1, max_concurrency)
 
     if mode == "auto":
         async with browser_session(headless=False) as browser:
@@ -166,39 +203,45 @@ async def crawl(url: str, max_pages: int = 10, mode: Literal["fast", "auto"] = "
                 "links_found": len(meta["links"]),
             }
         )
+        to_visit.clear()
+        queued.clear()
         for link in meta["links"]:
-            if link not in visited:
-                to_visit.add(link)
-        to_visit.discard(start_url)
+            if link not in visited and link not in queued:
+                queued.add(link)
+                to_visit.append(link)
 
     async with AsyncSession(cookies=cookies, impersonate="chrome", timeout=15) as session:
         while to_visit and len(visited) < max_pages:
-            current_url = to_visit.pop()
-            if current_url in visited:
+            remaining_slots = max_pages - len(visited)
+            batch_size = min(max_concurrency, remaining_slots)
+            batch = []
+
+            while to_visit and len(batch) < batch_size:
+                current_url = to_visit.popleft()
+                queued.discard(current_url)
+                if current_url in visited:
+                    continue
+                visited.add(current_url)
+                batch.append(current_url)
+
+            if not batch:
                 continue
-            visited.add(current_url)
 
-            try:
-                html = await request_page(session, current_url)
+            page_results = await asyncio.gather(
+                *(crawl_one_page(session, current_url, base_domain) for current_url in batch)
+            )
 
-                meta = parse_page_meta(html, current_url, base_domain)
-                results.append(
-                    {
-                        "url": current_url,
-                        "title": meta["title"],
-                        "description": meta["description"],
-                        "links_found": len(meta["links"]),
-                    }
-                )
-                for link in meta["links"]:
-                    if link not in visited:
-                        to_visit.add(link)
-            except Exception as error:
-                results.append({"url": current_url, "error": str(error)})
+            for result, links in page_results:
+                results.append(result)
+                for link in links:
+                    if link not in visited and link not in queued:
+                        queued.add(link)
+                        to_visit.append(link)
 
     return {
         "start_url": url,
         "mode": mode,
+        "max_concurrency": max_concurrency,
         "pages_crawled": len(results),
         "cookies_extracted": len(cookies),
         "results": results,

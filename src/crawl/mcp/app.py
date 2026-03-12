@@ -43,18 +43,29 @@ async def fetch(url: str, output_format: Literal["markdown", "text"] = "markdown
 
 
 @mcp.tool()
-async def crawl(url: str, max_pages: int = 10, mode: Literal["fast", "auto"] = "auto") -> dict:
+async def crawl(
+    url: str,
+    max_pages: int = 10,
+    mode: Literal["fast", "auto"] = "auto",
+    max_concurrency: int = 4,
+) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
     Args:
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
         mode: Crawl strategy, either ``fast`` or ``auto``.
+        max_concurrency: Maximum parallel HTTP requests.
 
     Returns:
         Crawled URL metadata and crawl statistics.
     """
-    return await sdk_crawl(url=url, max_pages=max_pages, mode=mode)
+    return await sdk_crawl(
+        url=url,
+        max_pages=max_pages,
+        mode=mode,
+        max_concurrency=max_concurrency,
+    )
 
 
 @mcp.tool()
