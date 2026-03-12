@@ -13,6 +13,7 @@ from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
 from .browser import browser_session
+from .cache import load_cached_page, save_cached_page
 from .discovery import collect_sitemap_urls, load_robots_rules
 from .google import (
     extract_ai_overview,
@@ -187,6 +188,7 @@ def build_page_result(
     include_html: bool = False,
     source: Literal["http", "browser"] = "http",
     fallback_used: bool = False,
+    cache_hit: bool = False,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -208,6 +210,7 @@ def build_page_result(
         "depth": depth,
         "source": source,
         "fallback_used": fallback_used,
+        "cache_hit": cache_hit,
         "status_code": page_data["status_code"],
         "content_type": page_data["content_type"],
         "title": page_meta["title"],
@@ -234,6 +237,9 @@ async def _fetch_page(
     include_html: bool = False,
     session: AsyncSession | None = None,
     depth: int = 0,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -247,6 +253,9 @@ async def _fetch_page(
         include_html: Whether to include raw HTML.
         session: Optional reusable HTTP session.
         depth: Crawl depth for the page.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -254,31 +263,51 @@ async def _fetch_page(
     page_data = None
     source: Literal["http", "browser"] = "http"
     fallback_used = False
+    cache_hit = False
 
-    if mode == "browser":
-        page_data = await request_browser_page(url)
-        source = "browser"
-    else:
-        try:
-            if session is None:
-                async with AsyncSession(impersonate="chrome", timeout=15) as owned_session:
-                    page_data = await request_page(owned_session, url)
-            else:
-                page_data = await request_page(session, url)
-        except Exception:
-            if mode != "auto":
-                raise
+    if cache:
+        cached_page_data = load_cached_page(
+            url=url,
+            mode=mode,
+            cache_dir=cache_dir,
+            cache_ttl_seconds=cache_ttl_seconds,
+        )
+        if cached_page_data is not None:
+            page_data = cached_page_data
+            source = page_data.get("source", source)
+            fallback_used = page_data.get("fallback_used", False)
+            cache_hit = True
+
+    if page_data is None:
+        if mode == "browser":
             page_data = await request_browser_page(url)
             source = "browser"
-            fallback_used = True
+        else:
+            try:
+                if session is None:
+                    async with AsyncSession(impersonate="chrome", timeout=15) as owned_session:
+                        page_data = await request_page(owned_session, url)
+                else:
+                    page_data = await request_page(session, url)
+            except Exception:
+                if mode != "auto":
+                    raise
+                page_data = await request_browser_page(url)
+                source = "browser"
+                fallback_used = True
 
-        if source == "http" and mode == "auto" and should_browser_fallback(page_data["status_code"], page_data["html"]):
-            browser_data = await request_browser_page(url)
-            browser_data["status_code"] = page_data["status_code"]
-            browser_data["ssl_fallback_used"] = page_data["ssl_fallback_used"]
-            page_data = browser_data
-            source = "browser"
-            fallback_used = True
+            if source == "http" and mode == "auto" and should_browser_fallback(page_data["status_code"], page_data["html"]):
+                browser_data = await request_browser_page(url)
+                browser_data["status_code"] = page_data["status_code"]
+                browser_data["ssl_fallback_used"] = page_data["ssl_fallback_used"]
+                page_data = browser_data
+                source = "browser"
+                fallback_used = True
+
+        page_data["source"] = source
+        page_data["fallback_used"] = fallback_used
+        if cache:
+            save_cached_page(url=url, mode=mode, page_data=page_data, cache_dir=cache_dir)
 
     scope_domain = urlparse(page_data["final_url"]).netloc or urlparse(url).netloc
     page_meta = parse_page_meta(
@@ -298,6 +327,7 @@ async def _fetch_page(
         include_html=include_html,
         source=source,
         fallback_used=fallback_used,
+        cache_hit=cache_hit,
     )
     return result, page_meta["links"]
 
@@ -310,6 +340,9 @@ async def fetch_page(
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
     include_html: bool = False,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -321,6 +354,9 @@ async def fetch_page(
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Structured page details and discovered links.
@@ -333,6 +369,9 @@ async def fetch_page(
         exclude_patterns=exclude_patterns,
         include_headers=include_headers,
         include_html=include_html,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
     )
     return result
 
@@ -341,6 +380,9 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> str:
     """Fetch a URL and convert the page into markdown or plain text.
 
@@ -348,11 +390,21 @@ async def fetch(
         url: URL to fetch.
         output_format: Either ``markdown`` or ``text``.
         mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Rendered page content.
     """
-    page = await fetch_page(url=url, mode=mode, include_html=True)
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_html=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+    )
     return render_page_content(page["html"], output_format)
 
 
@@ -365,6 +417,9 @@ async def crawl_one_page(
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -377,6 +432,9 @@ async def crawl_one_page(
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -391,6 +449,9 @@ async def crawl_one_page(
             include_headers=include_headers,
             session=session,
             depth=depth,
+            cache=cache,
+            cache_dir=cache_dir,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -411,6 +472,9 @@ async def crawl(
     seed_sitemap: bool = False,
     user_agent: str = "*",
     budget: dict[str, int] | None = None,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -429,6 +493,9 @@ async def crawl(
         seed_sitemap: Whether sitemap URLs should seed the crawl.
         user_agent: User agent name used for robots.txt evaluation.
         budget: Optional crawl budget mapping keyed by ``*`` or path prefixes.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -528,6 +595,9 @@ async def crawl(
                         include_patterns=include_patterns,
                         exclude_patterns=exclude_patterns,
                         include_headers=include_headers,
+                        cache=cache,
+                        cache_dir=cache_dir,
+                        cache_ttl_seconds=cache_ttl_seconds,
                     )
                     for current_url, current_depth in batch
                 )
@@ -560,6 +630,7 @@ async def crawl(
         "sitemap_seed_count": len(sitemap_seeds),
         "budget": budget or {},
         "budget_remaining": normalized_budget,
+        "cache": cache,
         "pages_crawled": len(results),
         "results": results,
     }

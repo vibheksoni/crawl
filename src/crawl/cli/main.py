@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("url", help="Page URL.")
     fetch_parser.add_argument("--format", choices=["markdown", "text"], default="markdown", dest="output_format")
     fetch_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    fetch_parser.add_argument("--cache", action="store_true", dest="cache")
+    fetch_parser.add_argument("--cache-dir", dest="cache_dir")
+    fetch_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -58,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
+    fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
+    fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
+    fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
 
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
@@ -74,6 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--seed-sitemap", action="store_true", dest="seed_sitemap")
     crawl_parser.add_argument("--user-agent", default="*", dest="user_agent")
     crawl_parser.add_argument("--budget", action="append", dest="budget_entries")
+    crawl_parser.add_argument("--cache", action="store_true", dest="cache")
+    crawl_parser.add_argument("--cache-dir", dest="cache_dir")
+    crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -119,7 +128,14 @@ async def run_command(args: argparse.Namespace):
         )
 
     if args.command == "fetch":
-        return await fetch(args.url, output_format=args.output_format, mode=args.mode)
+        return await fetch(
+            args.url,
+            output_format=args.output_format,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+        )
 
     if args.command == "fetch-page":
         return await fetch_page(
@@ -130,6 +146,9 @@ async def run_command(args: argparse.Namespace):
             exclude_patterns=args.exclude_patterns,
             include_headers=args.include_headers,
             include_html=args.include_html,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
         )
 
     if args.command == "crawl":
@@ -148,6 +167,9 @@ async def run_command(args: argparse.Namespace):
             seed_sitemap=args.seed_sitemap,
             user_agent=args.user_agent,
             budget=parse_budget_entries(args.budget_entries),
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
         )
 
     if args.command == "screenshot":

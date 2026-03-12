@@ -48,6 +48,9 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> str:
     """Run the SDK fetch operation through the MCP transport.
 
@@ -55,11 +58,21 @@ async def fetch(
         url: URL to fetch.
         output_format: Either ``markdown`` or ``text``.
         mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Rendered page content.
     """
-    return await sdk_fetch(url=url, output_format=output_format, mode=mode)
+    return await sdk_fetch(
+        url=url,
+        output_format=output_format,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+    )
 
 
 @mcp.tool()
@@ -71,6 +84,9 @@ async def fetch_page(
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
     include_html: bool = False,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> dict:
     """Run the SDK structured page fetch through the MCP transport.
 
@@ -82,6 +98,9 @@ async def fetch_page(
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Structured page details and discovered links.
@@ -94,6 +113,9 @@ async def fetch_page(
         exclude_patterns=exclude_patterns,
         include_headers=include_headers,
         include_html=include_html,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
     )
 
 
@@ -113,6 +135,9 @@ async def crawl(
     seed_sitemap: bool = False,
     user_agent: str = "*",
     budget: dict[str, int] | None = None,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
 ) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
@@ -131,6 +156,9 @@ async def crawl(
         seed_sitemap: Whether sitemap URLs should seed the crawl.
         user_agent: User agent name used for robots.txt evaluation.
         budget: Optional crawl budget mapping keyed by ``*`` or path prefixes.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -150,6 +178,9 @@ async def crawl(
         seed_sitemap=seed_sitemap,
         user_agent=user_agent,
         budget=budget,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
     )
 
 
