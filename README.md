@@ -42,7 +42,7 @@ python -m pip install -r requirements.txt
 ```python
 import asyncio
 
-from crawl.sdk import fetch, websearch
+from crawl.sdk import crawl, fetch, fetch_page, websearch
 
 
 async def main() -> None:
@@ -54,10 +54,24 @@ async def main() -> None:
         provider="searxng",
         searxng_url="http://127.0.0.1:8888",
     )
-    page_text = await fetch("https://example.com", output_format="text")
+    page = await fetch_page(
+        "https://docs.python.org/3/tutorial/",
+        mode="http",
+        include_headers=True,
+    )
+    page_text = await fetch("https://example.com", output_format="text", mode="auto")
+    crawl_results = await crawl(
+        "https://docs.python.org/3/tutorial/",
+        max_pages=5,
+        max_depth=1,
+        include_patterns=["tutorial"],
+        respect_robots_txt=True,
+    )
     print(search_results["count"])
     print(searxng_results["count"])
+    print(page["metadata"]["image"])
     print(page_text[:200])
+    print(crawl_results["pages_crawled"])
 
 
 asyncio.run(main())
@@ -70,8 +84,9 @@ Run from the repo root:
 ```powershell
 python cli.py websearch "python async browser automation" --max-results 5 --pages 1
 python cli.py websearch "python async browser automation" --provider searxng --searxng-url http://127.0.0.1:8888 --max-results 5 --pages 2
-python cli.py fetch https://example.com --format text
-python cli.py crawl https://example.com --max-pages 3 --mode fast --max-concurrency 4
+python cli.py fetch https://example.com --format text --mode auto
+python cli.py fetch-page https://docs.python.org/3/tutorial/ --mode http --include-headers
+python cli.py crawl https://docs.python.org/3/tutorial/ --max-pages 4 --max-depth 1 --include-pattern tutorial --respect-robots-txt
 python cli.py screenshot https://example.com --output example.jpg
 python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8
 ```
@@ -101,7 +116,8 @@ crawl-mcp
 ## Current Capabilities
 
 - `websearch`: supports Google browser scraping by default and optional SearXNG JSON search via `provider="searxng"` or `--provider searxng`
-- `fetch`: loads a page and returns markdown or plain-text content
-- `crawl`: walks a site with a browser-assisted or HTTP-only strategy and configurable HTTP concurrency
+- `fetch_page`: returns structured page details including metadata, filtered links, optional headers, and optional raw HTML
+- `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode
+- `crawl`: supports depth limits, include/exclude URL filters, optional subdomain crawling, optional robots.txt enforcement, sitemap seeding, and configurable HTTP concurrency
 - `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
 - `benchmark`: measures the HTTP-only crawler across multiple concurrency settings

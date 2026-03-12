@@ -7,6 +7,7 @@ from fastmcp.utilities.types import Image
 
 from crawl.sdk import crawl as sdk_crawl
 from crawl.sdk import fetch as sdk_fetch
+from crawl.sdk import fetch_page as sdk_fetch_page
 from crawl.sdk import screenshot as sdk_screenshot
 from crawl.sdk import websearch as sdk_websearch
 
@@ -43,17 +44,57 @@ async def websearch(
 
 
 @mcp.tool()
-async def fetch(url: str, output_format: Literal["markdown", "text"] = "markdown") -> str:
+async def fetch(
+    url: str,
+    output_format: Literal["markdown", "text"] = "markdown",
+    mode: Literal["auto", "http", "browser"] = "auto",
+) -> str:
     """Run the SDK fetch operation through the MCP transport.
 
     Args:
         url: URL to fetch.
         output_format: Either ``markdown`` or ``text``.
+        mode: Fetch strategy.
 
     Returns:
         Rendered page content.
     """
-    return await sdk_fetch(url=url, output_format=output_format)
+    return await sdk_fetch(url=url, output_format=output_format, mode=mode)
+
+
+@mcp.tool()
+async def fetch_page(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    allow_subdomains: bool = False,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    include_headers: bool = False,
+    include_html: bool = False,
+) -> dict:
+    """Run the SDK structured page fetch through the MCP transport.
+
+    Args:
+        url: URL to fetch.
+        mode: Fetch strategy.
+        allow_subdomains: Whether subdomains should be considered in-scope.
+        include_patterns: Optional include patterns for discovered links.
+        exclude_patterns: Optional exclude patterns for discovered links.
+        include_headers: Whether to include response headers.
+        include_html: Whether to include raw HTML.
+
+    Returns:
+        Structured page details and discovered links.
+    """
+    return await sdk_fetch_page(
+        url=url,
+        mode=mode,
+        allow_subdomains=allow_subdomains,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_headers=include_headers,
+        include_html=include_html,
+    )
 
 
 @mcp.tool()
@@ -62,6 +103,15 @@ async def crawl(
     max_pages: int = 10,
     mode: Literal["fast", "auto"] = "auto",
     max_concurrency: int = 4,
+    max_depth: int = 2,
+    allow_subdomains: bool = False,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    include_headers: bool = False,
+    respect_robots_txt: bool = False,
+    sitemap_url: str | None = None,
+    seed_sitemap: bool = False,
+    user_agent: str = "*",
 ) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
@@ -70,6 +120,15 @@ async def crawl(
         max_pages: Maximum pages to crawl.
         mode: Crawl strategy, either ``fast`` or ``auto``.
         max_concurrency: Maximum parallel HTTP requests.
+        max_depth: Maximum crawl depth from the start URL.
+        allow_subdomains: Whether subdomains should be considered in-scope.
+        include_patterns: Optional include patterns for discovered links.
+        exclude_patterns: Optional exclude patterns for discovered links.
+        include_headers: Whether to include response headers in results.
+        respect_robots_txt: Whether to enforce robots.txt access rules.
+        sitemap_url: Optional sitemap URL to seed the crawl.
+        seed_sitemap: Whether sitemap URLs should seed the crawl.
+        user_agent: User agent name used for robots.txt evaluation.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -79,6 +138,15 @@ async def crawl(
         max_pages=max_pages,
         mode=mode,
         max_concurrency=max_concurrency,
+        max_depth=max_depth,
+        allow_subdomains=allow_subdomains,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_headers=include_headers,
+        respect_robots_txt=respect_robots_txt,
+        sitemap_url=sitemap_url,
+        seed_sitemap=seed_sitemap,
+        user_agent=user_agent,
     )
 
 

@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import benchmark_fast_crawl, crawl, fetch, screenshot, websearch
+from crawl.sdk import benchmark_fast_crawl, crawl, fetch, fetch_page, screenshot, websearch
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,12 +27,31 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
     fetch_parser.add_argument("url", help="Page URL.")
     fetch_parser.add_argument("--format", choices=["markdown", "text"], default="markdown", dest="output_format")
+    fetch_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+
+    fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
+    fetch_page_parser.add_argument("url", help="Page URL.")
+    fetch_page_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    fetch_page_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    fetch_page_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
+    fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
+    fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
+    fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
 
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
     crawl_parser.add_argument("--max-pages", type=int, default=10, dest="max_pages")
     crawl_parser.add_argument("--mode", choices=["fast", "auto"], default="auto")
     crawl_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
+    crawl_parser.add_argument("--max-depth", type=int, default=2, dest="max_depth")
+    crawl_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    crawl_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
+    crawl_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
+    crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
+    crawl_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
+    crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
+    crawl_parser.add_argument("--seed-sitemap", action="store_true", dest="seed_sitemap")
+    crawl_parser.add_argument("--user-agent", default="*", dest="user_agent")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -78,7 +97,18 @@ async def run_command(args: argparse.Namespace):
         )
 
     if args.command == "fetch":
-        return await fetch(args.url, output_format=args.output_format)
+        return await fetch(args.url, output_format=args.output_format, mode=args.mode)
+
+    if args.command == "fetch-page":
+        return await fetch_page(
+            args.url,
+            mode=args.mode,
+            allow_subdomains=args.allow_subdomains,
+            include_patterns=args.include_patterns,
+            exclude_patterns=args.exclude_patterns,
+            include_headers=args.include_headers,
+            include_html=args.include_html,
+        )
 
     if args.command == "crawl":
         return await crawl(
@@ -86,6 +116,15 @@ async def run_command(args: argparse.Namespace):
             max_pages=args.max_pages,
             mode=args.mode,
             max_concurrency=args.max_concurrency,
+            max_depth=args.max_depth,
+            allow_subdomains=args.allow_subdomains,
+            include_patterns=args.include_patterns,
+            exclude_patterns=args.exclude_patterns,
+            include_headers=args.include_headers,
+            respect_robots_txt=args.respect_robots_txt,
+            sitemap_url=args.sitemap_url,
+            seed_sitemap=args.seed_sitemap,
+            user_agent=args.user_agent,
         )
 
     if args.command == "screenshot":

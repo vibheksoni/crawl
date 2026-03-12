@@ -1,9 +1,22 @@
 """Page parsing and content extraction helpers."""
 
+import re
 from typing import Literal
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
+
+FALLBACK_STATUS_CODES = {403, 429, 503, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530}
+FALLBACK_HTML_MARKERS = (
+    "attention required",
+    "captcha",
+    "cf-challenge",
+    "cloudflare",
+    "datadome",
+    "enable javascript and cookies",
+    "just a moment",
+    "verify you are human",
+)
 
 
 def strip_fragment(url: str) -> str:
@@ -16,53 +29,174 @@ def strip_fragment(url: str) -> str:
         URL without a fragment.
     """
     parsed = urlparse(url)
-    return parsed._replace(fragment="").geturl()
+    path = parsed.path or "/"
+    return parsed._replace(fragment="", path=path).geturl()
 
 
-async def extract_cookies(browser) -> dict:
-    """Extract browser cookies into a plain name/value mapping.
+def matches_patterns(url: str, patterns: list[str] | None) -> bool:
+    """Check whether a URL matches any of the provided patterns.
 
     Args:
-        browser: nodriver browser instance.
+        url: URL to inspect.
+        patterns: Regex or substring patterns.
 
     Returns:
-        Cookie mapping keyed by cookie name.
+        ``True`` if any pattern matches or no patterns were supplied.
     """
-    raw = await browser.cookies.get_all()
-    cookies = {}
-    for cookie in raw:
-        cookies[cookie.name] = cookie.value
-    return cookies
+    if not patterns:
+        return True
+
+    for pattern in patterns:
+        try:
+            if re.search(pattern, url):
+                return True
+        except re.error:
+            if pattern in url:
+                return True
+    return False
 
 
-def parse_page_meta(html: str, page_url: str, base_domain: str) -> dict:
-    """Extract title, description, and same-domain links from HTML.
+def is_same_scope(url: str, base_domain: str, allow_subdomains: bool = False) -> bool:
+    """Check whether a URL belongs to the allowed crawl scope.
+
+    Args:
+        url: URL to inspect.
+        base_domain: Root domain used for crawl scope.
+        allow_subdomains: Whether subdomains should be considered in-scope.
+
+    Returns:
+        ``True`` when the URL is inside the allowed scope.
+    """
+    netloc = urlparse(url).netloc
+    if not netloc:
+        return False
+    if netloc == base_domain:
+        return True
+    return allow_subdomains and netloc.endswith(f".{base_domain}")
+
+
+def normalize_headers(headers) -> dict[str, str]:
+    """Convert response headers into a JSON-serializable mapping.
+
+    Args:
+        headers: Header collection from an HTTP response.
+
+    Returns:
+        Plain string header mapping.
+    """
+    if headers is None:
+        return {}
+    return {str(key): str(value) for key, value in headers.items()}
+
+
+def extract_page_metadata(soup, page_url: str) -> dict:
+    """Extract metadata from a parsed page.
+
+    Args:
+        soup: BeautifulSoup parsed HTML tree.
+        page_url: URL of the current page.
+
+    Returns:
+        Metadata dictionary.
+    """
+    title_tag = soup.find("title")
+    title = title_tag.get_text(strip=True) if title_tag else ""
+
+    desc_tag = soup.find("meta", attrs={"name": "description"})
+    description = desc_tag.get("content", "").strip() if desc_tag else ""
+
+    image_tag = soup.find("meta", attrs={"property": "og:image"}) or soup.find(
+        "meta",
+        attrs={"name": "twitter:image"},
+    )
+    image = image_tag.get("content", "").strip() if image_tag else ""
+    if image:
+        image = urljoin(page_url, image)
+
+    canonical_tag = soup.find("link", attrs={"rel": "canonical"})
+    canonical_url = canonical_tag.get("href", "").strip() if canonical_tag else ""
+    if canonical_url:
+        canonical_url = urljoin(page_url, canonical_url)
+
+    return {
+        "title": title,
+        "description": description,
+        "image": image,
+        "canonical_url": canonical_url,
+    }
+
+
+def parse_page_meta(
+    html: str,
+    page_url: str,
+    base_domain: str,
+    allow_subdomains: bool = False,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+) -> dict:
+    """Extract metadata and scoped links from HTML.
 
     Args:
         html: Raw HTML content.
         page_url: URL of the current page.
         base_domain: Domain used to filter same-site links.
+        allow_subdomains: Whether subdomains should be considered in-scope.
+        include_patterns: Optional include patterns for discovered links.
+        exclude_patterns: Optional exclude patterns for discovered links.
 
     Returns:
         Page metadata and discovered links.
     """
     soup = BeautifulSoup(html, "html.parser")
-
-    title_tag = soup.find("title")
-    title = title_tag.get_text(strip=True) if title_tag else ""
-
-    desc_tag = soup.find("meta", attrs={"name": "description"})
-    description = desc_tag.get("content", "") if desc_tag else ""
+    metadata = extract_page_metadata(soup, page_url)
 
     links = []
     seen_links = set()
     for anchor in soup.find_all("a", href=True):
         full_url = strip_fragment(urljoin(page_url, anchor["href"]))
-        if urlparse(full_url).netloc == base_domain and full_url not in seen_links:
+        if full_url in seen_links:
+            continue
+        if not is_same_scope(full_url, base_domain, allow_subdomains=allow_subdomains):
+            continue
+        if not matches_patterns(full_url, include_patterns):
+            continue
+        if exclude_patterns and matches_patterns(full_url, exclude_patterns):
+            continue
+        if full_url not in seen_links:
             seen_links.add(full_url)
             links.append(full_url)
 
-    return {"title": title, "description": description, "links": links}
+    return {
+        "title": metadata["title"],
+        "description": metadata["description"],
+        "image": metadata["image"],
+        "canonical_url": metadata["canonical_url"],
+        "metadata": metadata,
+        "links": links,
+    }
+
+
+def should_browser_fallback(status_code: int | None, html: str) -> bool:
+    """Determine whether a browser fallback is warranted.
+
+    Args:
+        status_code: HTTP status code if available.
+        html: Response body HTML.
+
+    Returns:
+        ``True`` when the response likely needs browser rendering or anti-bot bypass.
+    """
+    if status_code is not None:
+        if status_code in FALLBACK_STATUS_CODES or status_code >= 500:
+            return True
+
+    lowered = html.lower()
+    if not lowered.strip():
+        return True
+    if any(marker in lowered for marker in FALLBACK_HTML_MARKERS):
+        return True
+
+    return False
 
 
 def render_page_content(html: str, output_format: Literal["markdown", "text"]) -> str:
