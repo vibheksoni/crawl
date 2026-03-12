@@ -802,6 +802,81 @@ async def scrape(
     return build_scrape_result(page, formats=formats, only_main_content=only_main_content)
 
 
+async def batch_scrape(
+    urls: list[str],
+    formats: list[ScrapeFormat] | None = None,
+    only_main_content: bool = True,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    max_concurrency: int = 4,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Scrape multiple URLs with bounded concurrency.
+
+    Args:
+        urls: URL list to scrape.
+        formats: Requested scrape formats.
+        only_main_content: Whether to prefer main content.
+        mode: Fetch strategy.
+        max_concurrency: Maximum concurrent scrape tasks.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+
+    Returns:
+        Batch scrape payload with per-URL results.
+    """
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+
+    async def scrape_one(index: int, target_url: str) -> dict:
+        async with semaphore:
+            try:
+                result = await scrape(
+                    url=target_url,
+                    formats=formats,
+                    only_main_content=only_main_content,
+                    mode=mode,
+                    cache=cache,
+                    cache_dir=cache_dir,
+                    cache_ttl_seconds=cache_ttl_seconds,
+                    user_agent=user_agent,
+                    headers=headers,
+                    accept_invalid_certs=accept_invalid_certs,
+                    pattern_mode=pattern_mode,
+                    proxy_url=proxy_url,
+                    proxy_urls=proxy_urls,
+                )
+                result["index"] = index
+                return result
+            except Exception as error:
+                return {
+                    "url": target_url,
+                    "index": index,
+                    "error": str(error),
+                }
+
+    results = await asyncio.gather(*(scrape_one(index, target_url) for index, target_url in enumerate(urls)))
+    return {
+        "total": len(urls),
+        "completed": sum(1 for item in results if "error" not in item),
+        "failed": sum(1 for item in results if "error" in item),
+        "data": results,
+    }
+
+
 async def crawl_one_page(
     session: AsyncSession,
     url: str,
