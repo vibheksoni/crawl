@@ -90,6 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     fetch_page_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
+    fetch_page_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -111,6 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     crawl_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     crawl_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
+    crawl_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
+    crawl_parser.add_argument("--dedupe-by-signature", action="store_true", dest="dedupe_by_signature")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     crawl_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
     crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
@@ -191,6 +194,7 @@ async def run_command(args: argparse.Namespace):
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
             pattern_mode=args.pattern_mode,
+            full_resources=args.full_resources,
             include_headers=args.include_headers,
             include_html=args.include_html,
             cache=args.cache,
@@ -214,6 +218,8 @@ async def run_command(args: argparse.Namespace):
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
             pattern_mode=args.pattern_mode,
+            full_resources=args.full_resources,
+            dedupe_by_signature=args.dedupe_by_signature,
             include_headers=args.include_headers,
             respect_robots_txt=args.respect_robots_txt,
             sitemap_url=args.sitemap_url,

@@ -4,6 +4,7 @@ import asyncio
 import io
 import os
 import tempfile
+import time
 from collections import deque
 from typing import Literal
 from urllib.parse import quote_plus, urlparse
@@ -22,8 +23,10 @@ from .google import (
     extract_video_results,
 )
 from .page import (
+    compute_page_signature,
     consume_crawl_budget,
     is_same_scope,
+    is_html_content_type,
     matches_patterns_with_mode,
     normalize_allowed_domains,
     normalize_headers,
@@ -290,6 +293,7 @@ async def request_page_with_verify_override(
     Returns:
         Structured HTTP response data.
     """
+    started_at = time.perf_counter()
     try:
         response = await session.get(
             url,
@@ -310,6 +314,8 @@ async def request_page_with_verify_override(
         "headers": normalize_headers(response.headers),
         "content_type": response.headers.get("content-type", ""),
         "html": response.text,
+        "bytes_transferred": len(response.content or b""),
+        "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
         "ssl_fallback_used": ssl_fallback_used,
     }
 
@@ -354,6 +360,7 @@ async def request_browser_page(
     Returns:
         Structured browser response data.
     """
+    started_at = time.perf_counter()
     browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
     async with browser_session(headless=False, browser_args=browser_args) as browser:
         page = await browser.get("about:blank")
@@ -366,13 +373,16 @@ async def request_browser_page(
         await page.get(url)
         await page.sleep(2)
 
+        html = await page.get_content()
         return {
             "url": url,
             "final_url": page.url,
             "status_code": None,
             "headers": {},
             "content_type": "text/html",
-            "html": await page.get_content(),
+            "html": html,
+            "bytes_transferred": len(html.encode("utf-8")),
+            "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
             "ssl_fallback_used": False,
         }
 
@@ -386,6 +396,7 @@ def build_page_result(
     source: Literal["http", "browser"] = "http",
     fallback_used: bool = False,
     cache_hit: bool = False,
+    signature: str | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -410,10 +421,18 @@ def build_page_result(
         "cache_hit": cache_hit,
         "status_code": page_data["status_code"],
         "content_type": page_data["content_type"],
+        "elapsed_ms": page_data.get("elapsed_ms"),
+        "bytes_transferred": page_data.get("bytes_transferred"),
         "title": page_meta["title"],
         "description": page_meta["description"],
         "links_found": len(page_meta["links"]),
+        "page_links_found": len(page_meta.get("page_links", [])),
+        "resources_found": len(page_meta.get("resources", [])),
+        "links": page_meta.get("links", []),
+        "page_links": page_meta.get("page_links", []),
+        "resources": page_meta.get("resources", []),
         "metadata": page_meta["metadata"],
+        "signature": signature,
     }
 
     if include_headers:
@@ -445,6 +464,7 @@ async def _fetch_page(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
+    full_resources: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -469,6 +489,7 @@ async def _fetch_page(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
+        full_resources: Whether to include resource URLs in discovery.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -539,7 +560,11 @@ async def _fetch_page(
                 source = "browser"
                 fallback_used = True
 
-            if source == "http" and mode == "auto" and should_browser_fallback(page_data["status_code"], page_data["html"]):
+            if source == "http" and mode == "auto" and should_browser_fallback(
+                page_data["status_code"],
+                page_data["html"],
+                headers=page_data["headers"],
+            ):
                 browser_data = await request_browser_page(
                     url,
                     user_agent=user_agent,
@@ -559,16 +584,36 @@ async def _fetch_page(
             save_cached_page(url=url, mode=mode, page_data=page_data, cache_dir=cache_dir)
 
     scope_domain = urlparse(page_data["final_url"]).netloc or urlparse(url).netloc
-    page_meta = parse_page_meta(
-        page_data["html"],
-        page_data["final_url"],
-        scope_domain,
-        allow_subdomains=allow_subdomains,
-        allowed_domains=allowed_domain_set,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        pattern_mode=pattern_mode,
-    )
+    if is_html_content_type(page_data["content_type"]):
+        page_meta = parse_page_meta(
+            page_data["html"],
+            page_data["final_url"],
+            scope_domain,
+            allow_subdomains=allow_subdomains,
+            allowed_domains=allowed_domain_set,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            pattern_mode=pattern_mode,
+            full_resources=full_resources,
+        )
+        signature = compute_page_signature(page_data["html"])
+    else:
+        page_meta = {
+            "title": "",
+            "description": "",
+            "image": "",
+            "canonical_url": "",
+            "metadata": {
+                "title": "",
+                "description": "",
+                "image": "",
+                "canonical_url": "",
+            },
+            "links": [],
+            "page_links": [],
+            "resources": [],
+        }
+        signature = None
 
     result = build_page_result(
         page_data,
@@ -579,6 +624,7 @@ async def _fetch_page(
         source=source,
         fallback_used=fallback_used,
         cache_hit=cache_hit,
+        signature=signature,
     )
     return result, page_meta["links"]
 
@@ -601,6 +647,7 @@ async def fetch_page(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    full_resources: bool = False,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -622,6 +669,7 @@ async def fetch_page(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        full_resources: Whether to include resource URLs in discovery.
 
     Returns:
         Structured page details and discovered links.
@@ -644,6 +692,7 @@ async def fetch_page(
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        full_resources=full_resources,
     )
     return result
 
@@ -715,6 +764,7 @@ async def crawl_one_page(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
+    full_resources: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -738,6 +788,7 @@ async def crawl_one_page(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
+        full_resources: Whether to include resource URLs in discovery.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -763,6 +814,7 @@ async def crawl_one_page(
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
             proxy_index=proxy_index,
+            full_resources=full_resources,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -792,6 +844,8 @@ async def crawl(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    full_resources: bool = False,
+    dedupe_by_signature: bool = False,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -819,6 +873,8 @@ async def crawl(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        full_resources: Whether to include resource URLs in crawl discovery.
+        dedupe_by_signature: Whether to stop expanding duplicate-content pages.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -831,6 +887,7 @@ async def crawl(
     queued = set()
     to_visit = deque()
     results = []
+    seen_signatures = {}
     max_concurrency = max(1, max_concurrency)
     robots_info = {
         "robots_url": None,
@@ -941,13 +998,22 @@ async def crawl(
                         proxy_url=proxy_url,
                         proxy_urls=normalized_proxy_urls,
                         proxy_index=len(results) + batch_index,
+                        full_resources=full_resources,
                     )
                     for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
             )
 
             for result, links in page_results:
+                signature = result.get("signature")
+                if signature and signature in seen_signatures:
+                    result["duplicate_of_signature"] = signature
+                    result["is_duplicate"] = True
+                elif signature:
+                    seen_signatures[signature] = result["url"]
                 results.append(result)
+                if dedupe_by_signature and result.get("is_duplicate"):
+                    continue
                 next_depth = result.get("depth", 0) + 1
                 if next_depth > max_depth:
                     continue
@@ -977,6 +1043,8 @@ async def crawl(
         "cache": cache,
         "pattern_mode": pattern_mode,
         "proxy_urls": normalized_proxy_urls,
+        "full_resources": full_resources,
+        "dedupe_by_signature": dedupe_by_signature,
         "pages_crawled": len(results),
         "results": results,
     }

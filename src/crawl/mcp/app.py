@@ -105,6 +105,7 @@ async def fetch_page(
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    full_resources: bool = False,
     include_headers: bool = False,
     include_html: bool = False,
     cache: bool = False,
@@ -126,6 +127,7 @@ async def fetch_page(
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         pattern_mode: Pattern matching mode.
+        full_resources: Whether to include resource URLs in discovery.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
         cache: Whether to use disk caching.
@@ -148,6 +150,7 @@ async def fetch_page(
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         pattern_mode=pattern_mode,
+        full_resources=full_resources,
         include_headers=include_headers,
         include_html=include_html,
         cache=cache,
@@ -173,6 +176,8 @@ async def crawl(
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    full_resources: bool = False,
+    dedupe_by_signature: bool = False,
     include_headers: bool = False,
     respect_robots_txt: bool = False,
     sitemap_url: str | None = None,
@@ -200,6 +205,8 @@ async def crawl(
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         pattern_mode: Pattern matching mode.
+        full_resources: Whether to include resource URLs in crawl discovery.
+        dedupe_by_signature: Whether to stop expanding duplicate-content pages.
         include_headers: Whether to include response headers in results.
         respect_robots_txt: Whether to enforce robots.txt access rules.
         sitemap_url: Optional sitemap URL to seed the crawl.
@@ -228,6 +235,8 @@ async def crawl(
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         pattern_mode=pattern_mode,
+        full_resources=full_resources,
+        dedupe_by_signature=dedupe_by_signature,
         include_headers=include_headers,
         respect_robots_txt=respect_robots_txt,
         sitemap_url=sitemap_url,

@@ -1,6 +1,7 @@
 """Page parsing and content extraction helpers."""
 
 import fnmatch
+import hashlib
 import re
 from typing import Literal
 from urllib.parse import urljoin, urlparse
@@ -9,15 +10,36 @@ from bs4 import BeautifulSoup
 
 FALLBACK_STATUS_CODES = {403, 429, 503, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530}
 FALLBACK_HTML_MARKERS = (
+    "__cf_bm",
+    "access denied",
     "attention required",
     "captcha",
     "cf-challenge",
+    "cf-turnstile",
+    "challenge-platform",
     "cloudflare",
+    "data-sitekey",
+    "ddos protection",
+    "forbidden",
+    "g-recaptcha",
+    "hcaptcha",
     "datadome",
     "enable javascript and cookies",
     "just a moment",
+    "security check",
     "verify you are human",
 )
+RESOURCE_ATTRIBUTE_MAP = {
+    "link": "href",
+    "script": "src",
+    "img": "src",
+    "source": "src",
+    "video": "src",
+    "audio": "src",
+    "iframe": "src",
+}
+NON_CONTENT_TAGS = {"base", "iframe", "noscript", "script", "style"}
+SIGNATURE_ALLOWED_ATTRIBUTES = {"class", "id"}
 
 
 def strip_fragment(url: str) -> str:
@@ -260,6 +282,114 @@ def extract_page_metadata(soup, page_url: str) -> dict:
     }
 
 
+def is_html_content_type(content_type: str) -> bool:
+    """Check whether a content type should be parsed as HTML-like content.
+
+    Args:
+        content_type: Response content type.
+
+    Returns:
+        ``True`` when the response should be parsed as HTML/XML text.
+    """
+    lowered = (content_type or "").lower()
+    return any(token in lowered for token in ("html", "xhtml", "xml", "svg"))
+
+
+def extract_resource_links(
+    soup,
+    page_url: str,
+    base_domain: str,
+    allow_subdomains: bool = False,
+    allowed_domains: set[str] | None = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+) -> list[str]:
+    """Extract resource URLs from a parsed page.
+
+    Args:
+        soup: BeautifulSoup parsed HTML tree.
+        page_url: URL of the current page.
+        base_domain: Domain used for crawl scope.
+        allow_subdomains: Whether subdomains are in-scope.
+        allowed_domains: Additional explicitly allowed domains.
+        include_patterns: Optional include patterns.
+        exclude_patterns: Optional exclude patterns.
+        pattern_mode: Pattern matching mode.
+
+    Returns:
+        Scoped resource URL list.
+    """
+    resources = []
+    seen_resources = set()
+
+    for tag_name, attribute_name in RESOURCE_ATTRIBUTE_MAP.items():
+        for element in soup.find_all(tag_name):
+            value = element.get(attribute_name)
+            if not value:
+                continue
+            full_url = strip_fragment(urljoin(page_url, value))
+            if full_url in seen_resources:
+                continue
+            if not is_same_scope(
+                full_url,
+                base_domain,
+                allow_subdomains=allow_subdomains,
+                allowed_domains=allowed_domains,
+            ):
+                continue
+            if not matches_patterns_with_mode(full_url, include_patterns, pattern_mode=pattern_mode):
+                continue
+            if exclude_patterns and matches_patterns_with_mode(full_url, exclude_patterns, pattern_mode=pattern_mode):
+                continue
+            seen_resources.add(full_url)
+            resources.append(full_url)
+
+    return resources
+
+
+def normalize_html_for_signature(html: str) -> str:
+    """Normalize HTML for structural content hashing.
+
+    Args:
+        html: Raw HTML content.
+
+    Returns:
+        Normalized HTML string.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup.find_all(NON_CONTENT_TAGS):
+        tag.decompose()
+
+    for element in soup.find_all(True):
+        attrs_to_remove = []
+        for attr_name in list(element.attrs.keys()):
+            if attr_name in {"href", "src"}:
+                attrs_to_remove.append(attr_name)
+                continue
+            if attr_name in SIGNATURE_ALLOWED_ATTRIBUTES or attr_name.startswith("data-"):
+                continue
+            attrs_to_remove.append(attr_name)
+        for attr_name in attrs_to_remove:
+            element.attrs.pop(attr_name, None)
+
+    return soup.decode(formatter="minimal")
+
+
+def compute_page_signature(html: str) -> str:
+    """Compute a normalized structural signature for a page.
+
+    Args:
+        html: Raw HTML content.
+
+    Returns:
+        Stable signature hex string.
+    """
+    normalized_html = normalize_html_for_signature(html)
+    return hashlib.blake2b(normalized_html.encode("utf-8"), digest_size=16).hexdigest()
+
+
 def parse_page_meta(
     html: str,
     page_url: str,
@@ -269,6 +399,7 @@ def parse_page_meta(
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    full_resources: bool = False,
 ) -> dict:
     """Extract metadata and scoped links from HTML.
 
@@ -281,6 +412,7 @@ def parse_page_meta(
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         pattern_mode: Pattern matching mode.
+        full_resources: Whether to include resource URLs in crawl discovery.
 
     Returns:
         Page metadata and discovered links.
@@ -309,22 +441,37 @@ def parse_page_meta(
             seen_links.add(full_url)
             links.append(full_url)
 
+    resources = extract_resource_links(
+        soup,
+        page_url,
+        base_domain,
+        allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
+    )
+    discovered_links = links + [resource for resource in resources if resource not in links] if full_resources else links
+
     return {
         "title": metadata["title"],
         "description": metadata["description"],
         "image": metadata["image"],
         "canonical_url": metadata["canonical_url"],
         "metadata": metadata,
-        "links": links,
+        "links": discovered_links,
+        "page_links": links,
+        "resources": resources,
     }
 
 
-def should_browser_fallback(status_code: int | None, html: str) -> bool:
+def should_browser_fallback(status_code: int | None, html: str, headers: dict[str, str] | None = None) -> bool:
     """Determine whether a browser fallback is warranted.
 
     Args:
         status_code: HTTP status code if available.
         html: Response body HTML.
+        headers: Optional response headers.
 
     Returns:
         ``True`` when the response likely needs browser rendering or anti-bot bypass.
@@ -336,6 +483,10 @@ def should_browser_fallback(status_code: int | None, html: str) -> bool:
     lowered = html.lower()
     if not lowered.strip():
         return True
+    server_header = (headers or {}).get("server", "").lower()
+    if any(token in server_header for token in ("cloudflare", "akamai", "imperva", "ddos-guard")):
+        if any(marker in lowered for marker in ("captcha", "forbidden", "access denied", "just a moment", "verify")):
+            return True
     if any(marker in lowered for marker in FALLBACK_HTML_MARKERS):
         return True
 
