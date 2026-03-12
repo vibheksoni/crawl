@@ -20,19 +20,36 @@ from .google import (
     extract_video_results,
 )
 from .page import extract_cookies, parse_page_meta, render_page_content, strip_fragment
+from .searxng import search_searxng
 
 
-async def websearch(query: str, max_results: int = 10, pages: int = 1) -> dict:
-    """Search Google and return parsed results using semantic heuristics.
+async def websearch(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    provider: Literal["google", "searxng"] = "google",
+    searxng_url: str | None = None,
+) -> dict:
+    """Search the web through Google or SearXNG and normalize the results.
 
     Args:
         query: Search query string.
         max_results: Maximum results per page.
         pages: Number of pages to scrape.
+        provider: Search provider to use.
+        searxng_url: Optional SearXNG base URL.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
     """
+    if provider == "searxng":
+        return await search_searxng(
+            query=query,
+            max_results=max_results,
+            pages=pages,
+            searxng_url=searxng_url,
+        )
+
     all_results = []
     all_videos = []
     all_paa = []
@@ -85,6 +102,8 @@ async def websearch(query: str, max_results: int = 10, pages: int = 1) -> dict:
                 await page_obj.sleep(3)
 
     return {
+        "provider": "google",
+        "provider_url": None,
         "query": query,
         "pages_scraped": min(current_page, pages),
         "ai_overview": ai_overview,

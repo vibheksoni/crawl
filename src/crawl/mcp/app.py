@@ -14,18 +14,32 @@ mcp = FastMCP("crawl-mcp")
 
 
 @mcp.tool()
-async def websearch(query: str, max_results: int = 10, pages: int = 1) -> dict:
+async def websearch(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    provider: Literal["google", "searxng"] = "google",
+    searxng_url: str | None = None,
+) -> dict:
     """Run the SDK web search through the MCP transport.
 
     Args:
         query: Search query string.
         max_results: Maximum results per page.
         pages: Number of pages to scrape.
+        provider: Search provider to use.
+        searxng_url: Optional SearXNG base URL.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
     """
-    return await sdk_websearch(query=query, max_results=max_results, pages=pages)
+    return await sdk_websearch(
+        query=query,
+        max_results=max_results,
+        pages=pages,
+        provider=provider,
+        searxng_url=searxng_url,
+    )
 
 
 @mcp.tool()

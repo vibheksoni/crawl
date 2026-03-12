@@ -21,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query.")
     search_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
     search_parser.add_argument("--pages", type=int, default=1)
+    search_parser.add_argument("--provider", choices=["google", "searxng"], default="google")
+    search_parser.add_argument("--searxng-url", dest="searxng_url")
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
     fetch_parser.add_argument("url", help="Page URL.")
@@ -64,7 +66,16 @@ async def run_command(args: argparse.Namespace):
         Command result object or string.
     """
     if args.command == "websearch":
-        return await websearch(args.query, max_results=args.max_results, pages=args.pages)
+        provider = args.provider
+        if args.searxng_url and provider == "google":
+            provider = "searxng"
+        return await websearch(
+            args.query,
+            max_results=args.max_results,
+            pages=args.pages,
+            provider=provider,
+            searxng_url=args.searxng_url,
+        )
 
     if args.command == "fetch":
         return await fetch(args.url, output_format=args.output_format)
