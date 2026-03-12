@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, fetch, fetch_page, scrape, screenshot, websearch
+from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, fetch, fetch_page, map_site, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -122,6 +122,27 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--header", action="append", dest="header_entries")
     batch_scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     batch_scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+
+    map_parser = subparsers.add_parser("map", help="Discover URLs within a site.")
+    map_parser.add_argument("url", help="Start URL.")
+    map_parser.add_argument("--search", dest="search")
+    map_parser.add_argument("--limit", type=int, default=100)
+    map_parser.add_argument("--mode", choices=["fast", "auto"], default="fast")
+    map_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    map_parser.add_argument("--allow-domain", action="append", dest="allowed_domains")
+    map_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
+    map_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
+    map_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
+    map_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
+    map_parser.add_argument("--sitemap-url", dest="sitemap_url")
+    map_parser.add_argument("--seed-sitemap", action="store_true", dest="seed_sitemap")
+    map_parser.add_argument("--user-agent", default="*", dest="user_agent")
+    map_parser.add_argument("--cache", action="store_true", dest="cache")
+    map_parser.add_argument("--cache-dir", dest="cache_dir")
+    map_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    map_parser.add_argument("--header", action="append", dest="header_entries")
+    map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -254,6 +275,29 @@ async def run_command(args: argparse.Namespace):
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
             user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+        )
+
+    if args.command == "map":
+        return await map_site(
+            args.url,
+            search=args.search,
+            limit=args.limit,
+            mode=args.mode,
+            allow_subdomains=args.allow_subdomains,
+            allowed_domains=args.allowed_domains,
+            include_patterns=args.include_patterns,
+            exclude_patterns=args.exclude_patterns,
+            pattern_mode=args.pattern_mode,
+            respect_robots_txt=args.respect_robots_txt,
+            sitemap_url=args.sitemap_url,
+            seed_sitemap=args.seed_sitemap,
+            user_agent=args.user_agent,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,

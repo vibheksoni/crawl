@@ -66,6 +66,48 @@ def dedupe_search_items(items: list[dict]) -> list[dict]:
     return deduped
 
 
+def tokenize_query(text: str) -> list[str]:
+    """Tokenize a query into lowercase search terms.
+
+    Args:
+        text: Query or text to tokenize.
+
+    Returns:
+        Token list.
+    """
+    return [token.lower() for token in text.replace("/", " ").replace("-", " ").split() if token.strip()]
+
+
+def score_map_result(item: dict, search: str | None = None) -> float:
+    """Score a mapped page for optional URL discovery relevance.
+
+    Args:
+        item: Crawl result item.
+        search: Optional relevance query.
+
+    Returns:
+        Relevance score.
+    """
+    if not search:
+        return 0.0
+
+    haystack = " ".join(
+        [
+            item.get("url", ""),
+            item.get("final_url", ""),
+            item.get("title", ""),
+            item.get("description", ""),
+        ]
+    ).lower()
+    score = 0.0
+    for token in tokenize_query(search):
+        if token in haystack:
+            score += 1.0
+        if token in item.get("url", "").lower():
+            score += 0.5
+    return score
+
+
 def merge_search_payloads(
     primary: dict,
     secondary: dict,
@@ -874,6 +916,110 @@ async def batch_scrape(
         "completed": sum(1 for item in results if "error" not in item),
         "failed": sum(1 for item in results if "error" in item),
         "data": results,
+    }
+
+
+async def map_site(
+    url: str,
+    search: str | None = None,
+    limit: int = 100,
+    mode: Literal["fast", "auto"] = "fast",
+    allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    respect_robots_txt: bool = False,
+    sitemap_url: str | None = None,
+    seed_sitemap: bool = False,
+    user_agent: str = "*",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Map a site into discovered URLs with optional relevance ordering.
+
+    Args:
+        url: Starting URL to map.
+        search: Optional relevance query.
+        limit: Maximum pages to include.
+        mode: Crawl strategy.
+        allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
+        include_patterns: Optional include patterns.
+        exclude_patterns: Optional exclude patterns.
+        pattern_mode: Pattern matching mode.
+        respect_robots_txt: Whether to enforce robots.txt access rules.
+        sitemap_url: Optional sitemap URL to seed the crawl.
+        seed_sitemap: Whether sitemap URLs should seed the crawl.
+        user_agent: User agent name used for robots.txt evaluation.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+
+    Returns:
+        URL map payload with optional relevance scores.
+    """
+    crawl_result = await crawl(
+        url=url,
+        max_pages=limit,
+        mode=mode,
+        max_depth=limit,
+        allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
+        respect_robots_txt=respect_robots_txt,
+        sitemap_url=sitemap_url,
+        seed_sitemap=seed_sitemap,
+        user_agent=user_agent,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+
+    items = []
+    for result in crawl_result["results"]:
+        if "error" in result or "blocked_by" in result:
+            continue
+        item = {
+            "url": result.get("final_url") or result.get("url"),
+            "title": result.get("title", ""),
+            "description": result.get("description", ""),
+        }
+        if search:
+            item["score"] = score_map_result(result, search=search)
+        items.append(item)
+
+    if search:
+        items.sort(key=lambda item: (item.get("score", 0.0), item.get("url", "")), reverse=True)
+
+    deduped_urls = []
+    seen_urls = set()
+    for item in items:
+        if item["url"] in seen_urls:
+            continue
+        seen_urls.add(item["url"])
+        deduped_urls.append(item)
+
+    return {
+        "url": url,
+        "search": search,
+        "total": len(deduped_urls[:limit]),
+        "urls": deduped_urls[:limit],
     }
 
 

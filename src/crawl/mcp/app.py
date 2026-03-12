@@ -9,6 +9,7 @@ from crawl.sdk import crawl as sdk_crawl
 from crawl.sdk import fetch as sdk_fetch
 from crawl.sdk import fetch_page as sdk_fetch_page
 from crawl.sdk import batch_scrape as sdk_batch_scrape
+from crawl.sdk import map_site as sdk_map_site
 from crawl.sdk import scrape as sdk_scrape
 from crawl.sdk import screenshot as sdk_screenshot
 from crawl.sdk import websearch as sdk_websearch
@@ -159,6 +160,54 @@ async def batch_scrape(
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
         user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+
+
+@mcp.tool()
+async def map(
+    url: str,
+    search: str | None = None,
+    limit: int = 100,
+    mode: Literal["fast", "auto"] = "fast",
+    allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    respect_robots_txt: bool = False,
+    sitemap_url: str | None = None,
+    seed_sitemap: bool = False,
+    user_agent: str = "*",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Run the SDK site mapping through the MCP transport."""
+    return await sdk_map_site(
+        url=url,
+        search=search,
+        limit=limit,
+        mode=mode,
+        allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
+        respect_robots_txt=respect_robots_txt,
+        sitemap_url=sitemap_url,
+        seed_sitemap=seed_sitemap,
+        user_agent=user_agent,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
