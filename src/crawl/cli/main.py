@@ -69,6 +69,23 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="google")
     search_parser.add_argument("--searxng-url", dest="searxng_url")
     search_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    search_parser.add_argument("--scrape-results", action="store_true", dest="scrape_results")
+    search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
+    search_parser.add_argument(
+        "--scrape-format",
+        choices=["markdown", "text", "html", "links", "metadata"],
+        action="append",
+        dest="scrape_formats",
+    )
+    search_parser.add_argument("--only-main-content", action="store_true", dest="only_main_content")
+    search_parser.add_argument("--include-full-page", action="store_false", dest="only_main_content")
+    search_parser.set_defaults(only_main_content=True)
+    search_parser.add_argument("--cache", action="store_true", dest="cache")
+    search_parser.add_argument("--cache-dir", dest="cache_dir")
+    search_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    search_parser.add_argument("--user-agent", dest="user_agent")
+    search_parser.add_argument("--header", action="append", dest="header_entries")
+    search_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
     fetch_parser.add_argument("url", help="Page URL.")
@@ -233,6 +250,16 @@ async def run_command(args: argparse.Namespace):
             provider=provider,
             searxng_url=args.searxng_url,
             proxy_urls=args.proxy_urls,
+            scrape_results=args.scrape_results,
+            scrape_limit=args.scrape_limit,
+            scrape_formats=args.scrape_formats,
+            only_main_content=args.only_main_content,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
         )
 
     if args.command == "fetch":

@@ -26,6 +26,16 @@ async def websearch(
     searxng_url: str | None = None,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    scrape_results: bool = False,
+    scrape_limit: int = 3,
+    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata"]] | None = None,
+    only_main_content: bool = True,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> dict:
     """Run the SDK web search through the MCP transport.
 
@@ -37,6 +47,16 @@ async def websearch(
         searxng_url: Optional SearXNG base URL.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        scrape_results: Whether to scrape the top search results.
+        scrape_limit: Maximum search results to scrape.
+        scrape_formats: Requested scrape formats for result scraping.
+        only_main_content: Whether to prefer main content while scraping results.
+        cache: Whether to use disk caching for result scraping.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override for result scraping.
+        headers: Optional extra headers for result scraping.
+        accept_invalid_certs: Whether to ignore certificate errors for result scraping.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -49,6 +69,16 @@ async def websearch(
         searxng_url=searxng_url,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        scrape_results=scrape_results,
+        scrape_limit=scrape_limit,
+        scrape_formats=scrape_formats,
+        only_main_content=only_main_content,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
 
 

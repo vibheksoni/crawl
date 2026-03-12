@@ -159,6 +159,79 @@ def merge_search_payloads(
     }
 
 
+async def attach_scraped_search_results(
+    search_payload: dict,
+    scrape_limit: int = 3,
+    scrape_formats: list[ScrapeFormat] | None = None,
+    only_main_content: bool = True,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Attach scraped content to the top search results.
+
+    Args:
+        search_payload: Existing search payload.
+        scrape_limit: Maximum results to scrape.
+        scrape_formats: Requested scrape formats.
+        only_main_content: Whether to prefer main content.
+        mode: Fetch strategy for result scraping.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+
+    Returns:
+        Search payload with scraped result attachments.
+    """
+    target_results = [item for item in search_payload.get("results", []) if item.get("link")][: max(0, scrape_limit)]
+    if not target_results:
+        search_payload["scraped_results"] = []
+        return search_payload
+
+    scraped_payload = await batch_scrape(
+        [item["link"] for item in target_results],
+        formats=scrape_formats or ["markdown"],
+        only_main_content=only_main_content,
+        mode=mode,
+        max_concurrency=min(max(1, scrape_limit), 4),
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+
+    scraped_by_url = {
+        item.get("url"): item
+        for item in scraped_payload.get("data", [])
+        if item.get("url")
+    }
+
+    for result in search_payload.get("results", []):
+        scraped = scraped_by_url.get(result.get("link"))
+        if scraped:
+            result["scrape"] = scraped
+
+    search_payload["scraped_results"] = scraped_payload.get("data", [])
+    search_payload["scrape_limit"] = scrape_limit
+    search_payload["scrape_formats"] = scrape_formats or ["markdown"]
+    return search_payload
+
+
 async def search_google(
     query: str,
     max_results: int = 10,
@@ -254,6 +327,16 @@ async def websearch(
     searxng_url: str | None = None,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    scrape_results: bool = False,
+    scrape_limit: int = 3,
+    scrape_formats: list[ScrapeFormat] | None = None,
+    only_main_content: bool = True,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> dict:
     """Search the web through Google or SearXNG and normalize the results.
 
@@ -265,6 +348,16 @@ async def websearch(
         searxng_url: Optional SearXNG base URL.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        scrape_results: Whether to scrape the top search results.
+        scrape_limit: Maximum search results to scrape.
+        scrape_formats: Requested scrape formats for result scraping.
+        only_main_content: Whether to prefer main content while scraping results.
+        cache: Whether to use disk caching for result scraping.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override for result scraping.
+        headers: Optional extra headers for result scraping.
+        accept_invalid_certs: Whether to ignore certificate errors for result scraping.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -273,14 +366,14 @@ async def websearch(
     selected_proxy = pick_proxy(normalized_proxy_urls, 0)
 
     if provider == "searxng":
-        return await search_searxng(
+        search_payload = await search_searxng(
             query=query,
             max_results=max_results,
             pages=pages,
             searxng_url=searxng_url,
             proxy_url=selected_proxy,
         )
-    if provider == "hybrid":
+    elif provider == "hybrid":
         searxng_result, google_result = await asyncio.gather(
             search_searxng(
                 query=query,
@@ -291,11 +384,10 @@ async def websearch(
             ),
             search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy),
         )
-        return merge_search_payloads(searxng_result, google_result, max_results=max_results, pages=pages)
-
-    if provider == "auto":
+        search_payload = merge_search_payloads(searxng_result, google_result, max_results=max_results, pages=pages)
+    elif provider == "auto":
         try:
-            return await search_searxng(
+            search_payload = await search_searxng(
                 query=query,
                 max_results=max_results,
                 pages=pages,
@@ -303,9 +395,28 @@ async def websearch(
                 proxy_url=selected_proxy,
             )
         except Exception:
-            return await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
+            search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
+    else:
+        search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
 
-    return await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
+    if scrape_results:
+        return await attach_scraped_search_results(
+            search_payload,
+            scrape_limit=scrape_limit,
+            scrape_formats=scrape_formats,
+            only_main_content=only_main_content,
+            mode="auto",
+            cache=cache,
+            cache_dir=cache_dir,
+            cache_ttl_seconds=cache_ttl_seconds,
+            user_agent=user_agent,
+            headers=headers,
+            accept_invalid_certs=accept_invalid_certs,
+            proxy_url=proxy_url,
+            proxy_urls=proxy_urls,
+        )
+
+    return search_payload
 
 
 async def request_page(session: AsyncSession, url: str) -> dict:
