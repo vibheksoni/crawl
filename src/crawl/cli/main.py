@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query.")
     search_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
     search_parser.add_argument("--pages", type=int, default=1)
-    search_parser.add_argument("--provider", choices=["google", "searxng"], default="google")
+    search_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="google")
     search_parser.add_argument("--searxng-url", dest="searxng_url")
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")

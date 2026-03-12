@@ -36,33 +36,91 @@ from .page import (
 from .searxng import search_searxng
 
 
-async def websearch(
-    query: str,
-    max_results: int = 10,
-    pages: int = 1,
-    provider: Literal["google", "searxng"] = "google",
-    searxng_url: str | None = None,
+def dedupe_search_items(items: list[dict]) -> list[dict]:
+    """Dedupe search items by link while preserving order.
+
+    Args:
+        items: Search item payloads.
+
+    Returns:
+        Deduped item list.
+    """
+    deduped = []
+    seen_links = set()
+
+    for item in items:
+        link = item.get("link")
+        if link and link in seen_links:
+            continue
+        if link:
+            seen_links.add(link)
+        deduped.append(item)
+
+    return deduped
+
+
+def merge_search_payloads(
+    primary: dict,
+    secondary: dict,
+    max_results: int,
+    pages: int,
 ) -> dict:
-    """Search the web through Google or SearXNG and normalize the results.
+    """Merge two search payloads into a single normalized response.
+
+    Args:
+        primary: Primary search payload.
+        secondary: Secondary search payload.
+        max_results: Maximum results per page.
+        pages: Number of requested pages.
+
+    Returns:
+        Combined search payload.
+    """
+    combined_results = dedupe_search_items(primary.get("results", []) + secondary.get("results", []))
+    combined_videos = dedupe_search_items(primary.get("videos", []) + secondary.get("videos", []))
+
+    people_also_ask = []
+    for question in primary.get("people_also_ask", []) + secondary.get("people_also_ask", []):
+        if question not in people_also_ask:
+            people_also_ask.append(question)
+
+    def merge_misc_list(key: str) -> list:
+        merged = []
+        for item in primary.get(key, []) + secondary.get(key, []):
+            if item not in merged:
+                merged.append(item)
+        return merged
+
+    return {
+        "provider": "hybrid",
+        "provider_url": [primary.get("provider_url"), secondary.get("provider_url")],
+        "providers": [primary.get("provider"), secondary.get("provider")],
+        "query": primary.get("query") or secondary.get("query"),
+        "pages_scraped": max(primary.get("pages_scraped", 0), secondary.get("pages_scraped", 0)),
+        "ai_overview": primary.get("ai_overview") or secondary.get("ai_overview", ""),
+        "results": combined_results[: max_results * pages],
+        "videos": combined_videos[:max_results],
+        "people_also_ask": people_also_ask,
+        "answers": merge_misc_list("answers"),
+        "infoboxes": merge_misc_list("infoboxes"),
+        "suggestions": merge_misc_list("suggestions"),
+        "corrections": merge_misc_list("corrections"),
+        "unresponsive_engines": merge_misc_list("unresponsive_engines"),
+        "count": min(len(combined_results), max_results * pages),
+    }
+
+
+async def search_google(query: str, max_results: int = 10, pages: int = 1) -> dict:
+    """Search Google and return normalized results.
 
     Args:
         query: Search query string.
         max_results: Maximum results per page.
         pages: Number of pages to scrape.
-        provider: Search provider to use.
-        searxng_url: Optional SearXNG base URL.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
     """
-    if provider == "searxng":
-        return await search_searxng(
-            query=query,
-            max_results=max_results,
-            pages=pages,
-            searxng_url=searxng_url,
-        )
-
     all_results = []
     all_videos = []
     all_paa = []
@@ -123,8 +181,65 @@ async def websearch(
         "results": all_results,
         "videos": all_videos,
         "people_also_ask": all_paa,
+        "answers": [],
+        "infoboxes": [],
+        "suggestions": [],
+        "corrections": [],
+        "unresponsive_engines": [],
         "count": len(all_results),
     }
+
+
+async def websearch(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
+    searxng_url: str | None = None,
+) -> dict:
+    """Search the web through Google or SearXNG and normalize the results.
+
+    Args:
+        query: Search query string.
+        max_results: Maximum results per page.
+        pages: Number of pages to scrape.
+        provider: Search provider to use.
+        searxng_url: Optional SearXNG base URL.
+
+    Returns:
+        Search results with links, titles, descriptions, and metadata.
+    """
+    if provider == "searxng":
+        return await search_searxng(
+            query=query,
+            max_results=max_results,
+            pages=pages,
+            searxng_url=searxng_url,
+        )
+    if provider == "hybrid":
+        searxng_result, google_result = await asyncio.gather(
+            search_searxng(
+                query=query,
+                max_results=max_results,
+                pages=pages,
+                searxng_url=searxng_url,
+            ),
+            search_google(query=query, max_results=max_results, pages=pages),
+        )
+        return merge_search_payloads(searxng_result, google_result, max_results=max_results, pages=pages)
+
+    if provider == "auto":
+        try:
+            return await search_searxng(
+                query=query,
+                max_results=max_results,
+                pages=pages,
+                searxng_url=searxng_url,
+            )
+        except Exception:
+            return await search_google(query=query, max_results=max_results, pages=pages)
+
+    return await search_google(query=query, max_results=max_results, pages=pages)
 
 
 async def request_page(session: AsyncSession, url: str) -> dict:

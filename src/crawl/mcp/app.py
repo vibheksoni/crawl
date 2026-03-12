@@ -19,7 +19,7 @@ async def websearch(
     query: str,
     max_results: int = 10,
     pages: int = 1,
-    provider: Literal["google", "searxng"] = "google",
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
     searxng_url: str | None = None,
 ) -> dict:
     """Run the SDK web search through the MCP transport.
