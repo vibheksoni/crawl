@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crawl"
+version = "0.1.0"
+description = "Async web search, fetch, crawl, and screenshot tooling with SDK, CLI, and MCP interfaces."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4==4.14.3",
+    "curl_cffi==0.14.0",
+    "fastmcp==3.0.2",
+    "nodriver==0.48.1",
+    "pillow",
+    "psutil",
+]
+
+[project.scripts]
+crawl-cli = "crawl.cli.main:main"
+crawl-mcp = "crawl.mcp.app:run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
