@@ -15,7 +15,7 @@ from PIL import Image as PILImage
 
 from .browser import browser_session, configure_page_request_settings
 from .cache import load_cached_page, save_cached_page
-from .discovery import collect_sitemap_urls, load_robots_rules
+from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .google import (
     extract_ai_overview,
     extract_organic_results,
@@ -29,10 +29,12 @@ from .page import (
     is_html_content_type,
     matches_patterns_with_mode,
     normalize_allowed_domains,
-    normalize_headers,
     normalize_crawl_budget,
+    normalize_delay_map,
+    normalize_headers,
     parse_page_meta,
     render_page_content,
+    resolve_delay_ms,
     should_browser_fallback,
     strip_fragment,
 )
@@ -846,6 +848,8 @@ async def crawl(
     proxy_urls: list[str] | None = None,
     full_resources: bool = False,
     dedupe_by_signature: bool = False,
+    delay_ms: int = 0,
+    path_delays: dict[str, int] | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -875,6 +879,8 @@ async def crawl(
         proxy_urls: Optional proxy URL pool.
         full_resources: Whether to include resource URLs in crawl discovery.
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
+        delay_ms: Default crawl delay in milliseconds.
+        path_delays: Optional per-path delay mapping in milliseconds.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -883,6 +889,7 @@ async def crawl(
     base_domain = urlparse(url).netloc
     visited = set()
     normalized_budget = normalize_crawl_budget(budget)
+    normalized_delay_map = normalize_delay_map(path_delays)
     normalized_proxy_urls = normalize_proxy_urls(proxy_url=proxy_url, proxy_urls=proxy_urls)
     queued = set()
     to_visit = deque()
@@ -914,6 +921,20 @@ async def crawl(
                 candidate_sitemaps.append(sitemap_url)
             if seed_sitemap:
                 candidate_sitemaps.extend(robots_info["sitemaps"])
+
+            if seed_sitemap and not candidate_sitemaps:
+                try:
+                    root_page = await request_page_with_verify_override(
+                        session,
+                        start_url,
+                        accept_invalid_certs=accept_invalid_certs,
+                        proxy_url=pick_proxy(normalized_proxy_urls, 0),
+                    )
+                    candidate_sitemaps.extend(
+                        discover_sitemap_urls_from_html(root_page["html"], root_page["final_url"])
+                    )
+                except Exception:
+                    pass
 
             seen_sitemaps = set()
             filtered_sitemaps = []
@@ -1024,8 +1045,25 @@ async def crawl(
                             queued.add(normalized_link)
                             to_visit.append((normalized_link, next_depth))
 
-            if robots_info["crawl_delay"]:
-                await asyncio.sleep(float(robots_info["crawl_delay"]))
+            if results:
+                batch_delay_ms = 0
+                for result, _ in page_results:
+                    batch_delay_ms = max(
+                        batch_delay_ms,
+                        resolve_delay_ms(
+                            result.get("final_url", result.get("url", "")),
+                            normalized_delay_map,
+                            default_delay_ms=delay_ms,
+                        ),
+                    )
+
+                robots_delay_ms = 0
+                if robots_info["crawl_delay"]:
+                    robots_delay_ms = int(float(robots_info["crawl_delay"]) * 1000)
+
+                effective_delay_ms = max(batch_delay_ms, robots_delay_ms)
+                if effective_delay_ms > 0:
+                    await asyncio.sleep(effective_delay_ms / 1000)
 
     return {
         "start_url": url,
@@ -1045,6 +1083,8 @@ async def crawl(
         "proxy_urls": normalized_proxy_urls,
         "full_resources": full_resources,
         "dedupe_by_signature": dedupe_by_signature,
+        "delay_ms": delay_ms,
+        "path_delays": normalized_delay_map,
         "pages_crawled": len(results),
         "results": results,
     }

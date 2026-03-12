@@ -120,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--seed-sitemap", action="store_true", dest="seed_sitemap")
     crawl_parser.add_argument("--user-agent", default="*", dest="user_agent")
     crawl_parser.add_argument("--budget", action="append", dest="budget_entries")
+    crawl_parser.add_argument("--delay-ms", type=int, default=0, dest="delay_ms")
+    crawl_parser.add_argument("--path-delay", action="append", dest="path_delay_entries")
     crawl_parser.add_argument("--cache", action="store_true", dest="cache")
     crawl_parser.add_argument("--cache-dir", dest="cache_dir")
     crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -226,6 +228,8 @@ async def run_command(args: argparse.Namespace):
             seed_sitemap=args.seed_sitemap,
             user_agent=args.user_agent,
             budget=parse_budget_entries(args.budget_entries),
+            delay_ms=args.delay_ms,
+            path_delays=parse_budget_entries(args.path_delay_entries),
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,

@@ -1,9 +1,11 @@
 """Robots.txt and sitemap discovery helpers."""
 
+from urllib.parse import urljoin
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
+from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
 from .page import normalize_headers
@@ -79,6 +81,33 @@ def extract_loc_values(root: ElementTree.Element, parent_tag: str) -> list[str]:
             if local_name(child.tag) == "loc" and child.text:
                 values.append(child.text.strip())
     return values
+
+
+def discover_sitemap_urls_from_html(html: str, page_url: str) -> list[str]:
+    """Discover sitemap URLs from page markup.
+
+    Args:
+        html: Raw HTML content.
+        page_url: URL of the page containing sitemap hints.
+
+    Returns:
+        Sitemap URL list.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    sitemap_urls = []
+
+    for link in soup.find_all("link", href=True):
+        rel_values = [value.lower() for value in link.get("rel", [])]
+        href = link.get("href", "").strip()
+        if not href:
+            continue
+        lowered_href = href.lower()
+        if "sitemap" in rel_values or "sitemap" in lowered_href:
+            absolute_url = urljoin(page_url, href)
+            if absolute_url not in sitemap_urls:
+                sitemap_urls.append(absolute_url)
+
+    return sitemap_urls
 
 
 async def load_robots_rules(

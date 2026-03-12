@@ -216,6 +216,65 @@ def normalize_crawl_budget(budget: dict[str, int] | None) -> dict[str, int]:
     return normalized
 
 
+def normalize_delay_map(delay_map: dict[str, int] | None) -> dict[str, int]:
+    """Normalize per-path crawl delays.
+
+    Args:
+        delay_map: Optional delay mapping keyed by ``*`` or path prefixes.
+
+    Returns:
+        Sanitized delay mapping in milliseconds.
+    """
+    if not delay_map:
+        return {}
+
+    normalized = {}
+    for key, value in delay_map.items():
+        try:
+            delay_ms = max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+
+        if key == "*":
+            normalized["*"] = delay_ms
+            continue
+
+        parsed = urlparse(key)
+        path = parsed.path if parsed.scheme or parsed.netloc else key
+        path = path or "/"
+        if not path.startswith("/"):
+            path = f"/{path}"
+        normalized[path] = delay_ms
+
+    return normalized
+
+
+def resolve_delay_ms(url: str, delay_map: dict[str, int] | None, default_delay_ms: int = 0) -> int:
+    """Resolve the effective crawl delay for a URL.
+
+    Args:
+        url: URL being processed.
+        delay_map: Optional per-path delay mapping.
+        default_delay_ms: Default delay in milliseconds.
+
+    Returns:
+        Effective delay in milliseconds.
+    """
+    if not delay_map:
+        return max(0, default_delay_ms)
+
+    path = urlparse(url).path or "/"
+    matched_prefixes = [prefix for prefix in delay_map if prefix != "*" and path.startswith(prefix)]
+    matched_prefix = max(matched_prefixes, key=len) if matched_prefixes else None
+
+    delay_ms = max(0, default_delay_ms)
+    if "*" in delay_map:
+        delay_ms = max(delay_ms, delay_map["*"])
+    if matched_prefix:
+        delay_ms = max(delay_ms, delay_map[matched_prefix])
+    return delay_ms
+
+
 def consume_crawl_budget(url: str, budget_state: dict[str, int] | None) -> bool:
     """Consume crawl budget for a URL if capacity remains.
 

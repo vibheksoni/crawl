@@ -184,6 +184,8 @@ async def crawl(
     seed_sitemap: bool = False,
     user_agent: str = "*",
     budget: dict[str, int] | None = None,
+    delay_ms: int = 0,
+    path_delays: dict[str, int] | None = None,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -213,6 +215,8 @@ async def crawl(
         seed_sitemap: Whether sitemap URLs should seed the crawl.
         user_agent: User agent name used for robots.txt evaluation.
         budget: Optional crawl budget mapping keyed by ``*`` or path prefixes.
+        delay_ms: Default crawl delay in milliseconds.
+        path_delays: Optional per-path delay mapping in milliseconds.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -243,6 +247,8 @@ async def crawl(
         seed_sitemap=seed_sitemap,
         user_agent=user_agent,
         budget=budget,
+        delay_ms=delay_ms,
+        path_delays=path_delays,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
