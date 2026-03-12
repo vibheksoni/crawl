@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import benchmark_fast_crawl, crawl, fetch, fetch_page, screenshot, websearch
+from crawl.sdk import benchmark_fast_crawl, crawl, fetch, fetch_page, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -81,6 +81,26 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     fetch_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+
+    scrape_parser = subparsers.add_parser("scrape", help="Run the multi-format scrape command.")
+    scrape_parser.add_argument("url", help="Page URL.")
+    scrape_parser.add_argument(
+        "--format",
+        choices=["markdown", "text", "html", "links", "metadata"],
+        action="append",
+        dest="formats",
+    )
+    scrape_parser.add_argument("--only-main-content", action="store_true", dest="only_main_content")
+    scrape_parser.add_argument("--include-full-page", action="store_false", dest="only_main_content")
+    scrape_parser.set_defaults(only_main_content=True)
+    scrape_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    scrape_parser.add_argument("--cache", action="store_true", dest="cache")
+    scrape_parser.add_argument("--cache-dir", dest="cache_dir")
+    scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    scrape_parser.add_argument("--user-agent", dest="user_agent")
+    scrape_parser.add_argument("--header", action="append", dest="header_entries")
+    scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -177,6 +197,21 @@ async def run_command(args: argparse.Namespace):
         return await fetch(
             args.url,
             output_format=args.output_format,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+        )
+
+    if args.command == "scrape":
+        return await scrape(
+            args.url,
+            formats=args.formats,
+            only_main_content=args.only_main_content,
             mode=args.mode,
             cache=args.cache,
             cache_dir=args.cache_dir,

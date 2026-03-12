@@ -39,6 +39,7 @@ RESOURCE_ATTRIBUTE_MAP = {
     "iframe": "src",
 }
 NON_CONTENT_TAGS = {"base", "iframe", "noscript", "script", "style"}
+MAIN_CONTENT_TAGS = ("main", "article", "[role='main']", "#main", ".main", "#content", ".content")
 SIGNATURE_ALLOWED_ATTRIBUTES = {"class", "id"}
 
 
@@ -524,6 +525,90 @@ def parse_page_meta(
     }
 
 
+def extract_content_soup(html: str, only_main_content: bool = True):
+    """Extract a cleaned content soup fragment from HTML.
+
+    Args:
+        html: Raw HTML content.
+        only_main_content: Whether to prefer main/article-like content.
+
+    Returns:
+        BeautifulSoup fragment representing the selected content.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    if only_main_content:
+        for tag in soup(["header", "footer", "nav", "aside", "form"]):
+            tag.decompose()
+
+        for selector in MAIN_CONTENT_TAGS:
+            target = soup.select_one(selector)
+            if target and target.get_text(" ", strip=True):
+                return target
+
+        body = soup.body
+        if body:
+            candidates = [
+                node
+                for node in body.find_all(["section", "div"], recursive=True)
+                if node.get_text(" ", strip=True)
+            ]
+            if candidates:
+                scored = sorted(
+                    candidates,
+                    key=lambda node: (
+                        len(node.find_all(["p", "li", "h1", "h2", "h3"])),
+                        len(node.get_text(" ", strip=True)),
+                    ),
+                    reverse=True,
+                )
+                return scored[0]
+            return body
+
+    return soup.body or soup
+
+
+def extract_links_from_html(html: str, page_url: str, only_main_content: bool = True) -> list[str]:
+    """Extract visible links from cleaned page content.
+
+    Args:
+        html: Raw HTML content.
+        page_url: URL of the current page.
+        only_main_content: Whether to prefer main content before link extraction.
+
+    Returns:
+        Absolute link list in document order.
+    """
+    target = extract_content_soup(html, only_main_content=only_main_content)
+    links = []
+    seen_links = set()
+
+    for anchor in target.find_all("a", href=True):
+        href = strip_fragment(urljoin(page_url, anchor["href"]))
+        if href not in seen_links:
+            seen_links.add(href)
+            links.append(href)
+
+    return links
+
+
+def render_clean_html(html: str, only_main_content: bool = True) -> str:
+    """Render cleaned HTML for scraping output.
+
+    Args:
+        html: Raw HTML content.
+        only_main_content: Whether to prefer main content.
+
+    Returns:
+        Cleaned HTML string.
+    """
+    target = extract_content_soup(html, only_main_content=only_main_content)
+    return str(target)
+
+
 def should_browser_fallback(status_code: int | None, html: str, headers: dict[str, str] | None = None) -> bool:
     """Determine whether a browser fallback is warranted.
 
@@ -552,26 +637,28 @@ def should_browser_fallback(status_code: int | None, html: str, headers: dict[st
     return False
 
 
-def render_page_content(html: str, output_format: Literal["markdown", "text"]) -> str:
+def render_page_content(
+    html: str,
+    output_format: Literal["markdown", "text"],
+    only_main_content: bool = True,
+) -> str:
     """Convert page HTML into markdown or plain text.
 
     Args:
         html: Raw HTML content.
         output_format: Either ``markdown`` or ``text``.
+        only_main_content: Whether to prefer main content.
 
     Returns:
         Rendered page content.
     """
-    soup = BeautifulSoup(html, "html.parser")
-
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
+    target = extract_content_soup(html, only_main_content=only_main_content)
 
     if output_format == "text":
-        return soup.get_text(separator="\n", strip=True)
+        return target.get_text(separator="\n", strip=True)
 
     content = []
-    for element in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "a", "ul", "ol", "li"]):
+    for element in target.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "a", "ul", "ol", "li"]):
         if element.name.startswith("h"):
             level = int(element.name[1])
             content.append(f"{'#' * level} {element.get_text(strip=True)}")

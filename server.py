@@ -9,10 +9,10 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from crawl import crawl, fetch, fetch_page, screenshot, websearch
+from crawl import crawl, fetch, fetch_page, scrape, screenshot, websearch
 from crawl.mcp import mcp, run
 
-__all__ = ["crawl", "fetch", "fetch_page", "mcp", "run", "screenshot", "websearch"]
+__all__ = ["crawl", "fetch", "fetch_page", "mcp", "run", "scrape", "screenshot", "websearch"]
 
 
 if __name__ == "__main__":

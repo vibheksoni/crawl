@@ -39,6 +39,7 @@ from .page import (
     strip_fragment,
 )
 from .proxy import normalize_proxy_urls, pick_proxy
+from .scrape import ScrapeFormat, build_scrape_result
 from .searxng import search_searxng
 
 
@@ -711,6 +712,7 @@ async def fetch(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    only_main_content: bool = True,
 ) -> str:
     """Fetch a URL and convert the page into markdown or plain text.
 
@@ -726,6 +728,7 @@ async def fetch(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        only_main_content: Whether to prefer main content.
 
     Returns:
         Rendered page content.
@@ -743,7 +746,60 @@ async def fetch(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
     )
-    return render_page_content(page["html"], output_format)
+    return render_page_content(page["html"], output_format, only_main_content=only_main_content)
+
+
+async def scrape(
+    url: str,
+    formats: list[ScrapeFormat] | None = None,
+    only_main_content: bool = True,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Scrape a page into one or more content formats.
+
+    Args:
+        url: URL to scrape.
+        formats: Requested scrape formats.
+        only_main_content: Whether to prefer main content.
+        mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+
+    Returns:
+        Multi-format scrape payload.
+    """
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_html=True,
+        include_headers=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        pattern_mode=pattern_mode,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+    return build_scrape_result(page, formats=formats, only_main_content=only_main_content)
 
 
 async def crawl_one_page(

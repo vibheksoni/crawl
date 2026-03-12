@@ -8,6 +8,7 @@ from fastmcp.utilities.types import Image
 from crawl.sdk import crawl as sdk_crawl
 from crawl.sdk import fetch as sdk_fetch
 from crawl.sdk import fetch_page as sdk_fetch_page
+from crawl.sdk import scrape as sdk_scrape
 from crawl.sdk import screenshot as sdk_screenshot
 from crawl.sdk import websearch as sdk_websearch
 
@@ -91,6 +92,40 @@ async def fetch(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+
+
+@mcp.tool()
+async def scrape(
+    url: str,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata"]] | None = None,
+    only_main_content: bool = True,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Run the SDK multi-format scrape through the MCP transport."""
+    return await sdk_scrape(
+        url=url,
+        formats=formats,
+        only_main_content=only_main_content,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
     )

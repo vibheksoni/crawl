@@ -1,0 +1,57 @@
+"""Scrape format helpers."""
+
+from typing import Literal
+
+from .page import extract_links_from_html, render_clean_html, render_page_content
+
+ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata"]
+
+
+def build_scrape_result(
+    page_result: dict,
+    formats: list[ScrapeFormat] | None = None,
+    only_main_content: bool = True,
+) -> dict:
+    """Build a multi-format scrape payload from a structured page result.
+
+    Args:
+        page_result: Structured page result from ``fetch_page``.
+        formats: Requested output formats.
+        only_main_content: Whether to prefer main content.
+
+    Returns:
+        Scrape payload with the requested formats.
+    """
+    requested_formats = formats or ["markdown"]
+    html = page_result.get("html", "")
+    result = {
+        "url": page_result["final_url"],
+        "metadata": page_result.get("metadata", {}),
+        "source": page_result.get("source"),
+        "cache_hit": page_result.get("cache_hit", False),
+    }
+
+    if "markdown" in requested_formats:
+        result["markdown"] = render_page_content(
+            html,
+            output_format="markdown",
+            only_main_content=only_main_content,
+        )
+    if "text" in requested_formats:
+        result["text"] = render_page_content(
+            html,
+            output_format="text",
+            only_main_content=only_main_content,
+        )
+    if "html" in requested_formats:
+        result["html"] = render_clean_html(html, only_main_content=only_main_content)
+    if "links" in requested_formats:
+        result["links"] = extract_links_from_html(
+            html,
+            page_result["final_url"],
+            only_main_content=only_main_content,
+        )
+    if "metadata" in requested_formats:
+        result["metadata"] = page_result.get("metadata", {})
+
+    return result
