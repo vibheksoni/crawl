@@ -4,6 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import nodriver as uc
+import nodriver.cdp.network as network_cdp
+import nodriver.cdp.security as security_cdp
 
 
 async def kill_browser(browser) -> None:
@@ -18,6 +20,29 @@ async def kill_browser(browser) -> None:
         browser.stop()
     except Exception:
         pass
+
+
+async def configure_page_request_settings(
+    page,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+) -> None:
+    """Configure browser-side request settings for a page.
+
+    Args:
+        page: Browser page/tab.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+    """
+    await page.send(network_cdp.enable())
+    if accept_invalid_certs:
+        await page.send(security_cdp.set_ignore_certificate_errors(True))
+    if headers:
+        await page.send(network_cdp.set_extra_http_headers(network_cdp.Headers.from_json(headers)))
+    if user_agent:
+        await page.send(network_cdp.set_user_agent_override(user_agent=user_agent))
 
 
 @asynccontextmanager

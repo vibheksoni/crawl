@@ -56,13 +56,39 @@ def matches_patterns(url: str, patterns: list[str] | None) -> bool:
     return False
 
 
-def is_same_scope(url: str, base_domain: str, allow_subdomains: bool = False) -> bool:
+def normalize_allowed_domains(allowed_domains: list[str] | None) -> set[str]:
+    """Normalize allowed-domain entries into netloc values.
+
+    Args:
+        allowed_domains: Optional list of domains or URLs.
+
+    Returns:
+        Set of normalized netlocs.
+    """
+    if not allowed_domains:
+        return set()
+
+    normalized = set()
+    for domain in allowed_domains:
+        parsed = urlparse(domain if "://" in domain else f"https://{domain}")
+        if parsed.netloc:
+            normalized.add(parsed.netloc)
+    return normalized
+
+
+def is_same_scope(
+    url: str,
+    base_domain: str,
+    allow_subdomains: bool = False,
+    allowed_domains: set[str] | None = None,
+) -> bool:
     """Check whether a URL belongs to the allowed crawl scope.
 
     Args:
         url: URL to inspect.
         base_domain: Root domain used for crawl scope.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
 
     Returns:
         ``True`` when the URL is inside the allowed scope.
@@ -70,9 +96,15 @@ def is_same_scope(url: str, base_domain: str, allow_subdomains: bool = False) ->
     netloc = urlparse(url).netloc
     if not netloc:
         return False
+    if allowed_domains and netloc in allowed_domains:
+        return True
     if netloc == base_domain:
         return True
-    return allow_subdomains and netloc.endswith(f".{base_domain}")
+    if allow_subdomains and netloc.endswith(f".{base_domain}"):
+        return True
+    if allowed_domains:
+        return any(netloc.endswith(f".{domain}") for domain in allowed_domains)
+    return False
 
 
 def normalize_headers(headers) -> dict[str, str]:
@@ -193,6 +225,7 @@ def parse_page_meta(
     page_url: str,
     base_domain: str,
     allow_subdomains: bool = False,
+    allowed_domains: set[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
 ) -> dict:
@@ -203,6 +236,7 @@ def parse_page_meta(
         page_url: URL of the current page.
         base_domain: Domain used to filter same-site links.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
 
@@ -218,7 +252,12 @@ def parse_page_meta(
         full_url = strip_fragment(urljoin(page_url, anchor["href"]))
         if full_url in seen_links:
             continue
-        if not is_same_scope(full_url, base_domain, allow_subdomains=allow_subdomains):
+        if not is_same_scope(
+            full_url,
+            base_domain,
+            allow_subdomains=allow_subdomains,
+            allowed_domains=allowed_domains,
+        ):
             continue
         if not matches_patterns(full_url, include_patterns):
             continue

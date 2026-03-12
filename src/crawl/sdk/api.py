@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
-from .browser import browser_session
+from .browser import browser_session, configure_page_request_settings
 from .cache import load_cached_page, save_cached_page
 from .discovery import collect_sitemap_urls, load_robots_rules
 from .google import (
@@ -25,6 +25,7 @@ from .page import (
     consume_crawl_budget,
     is_same_scope,
     matches_patterns,
+    normalize_allowed_domains,
     normalize_headers,
     normalize_crawl_budget,
     parse_page_meta,
@@ -136,11 +137,29 @@ async def request_page(session: AsyncSession, url: str) -> dict:
     Returns:
         Structured HTTP response data.
     """
+    return await request_page_with_verify_override(session, url)
+
+
+async def request_page_with_verify_override(
+    session: AsyncSession,
+    url: str,
+    accept_invalid_certs: bool = False,
+) -> dict:
+    """Fetch a page over HTTP with configurable certificate handling.
+
+    Args:
+        session: Async HTTP session.
+        url: URL to fetch.
+        accept_invalid_certs: Whether to skip certificate verification.
+
+    Returns:
+        Structured HTTP response data.
+    """
     try:
-        response = await session.get(url)
-        ssl_fallback_used = False
+        response = await session.get(url, verify=False if accept_invalid_certs else None)
+        ssl_fallback_used = accept_invalid_certs
     except Exception as error:
-        if "SSL certificate problem" not in str(error):
+        if accept_invalid_certs or "SSL certificate problem" not in str(error):
             raise
         response = await session.get(url, verify=False)
         ssl_fallback_used = True
@@ -156,17 +175,53 @@ async def request_page(session: AsyncSession, url: str) -> dict:
     }
 
 
-async def request_browser_page(url: str) -> dict:
+def build_http_headers(
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, str] | None:
+    """Build request headers for HTTP fetches.
+
+    Args:
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+
+    Returns:
+        Combined header mapping or ``None``.
+    """
+    merged = {}
+    if headers:
+        merged.update(headers)
+    if user_agent:
+        merged["user-agent"] = user_agent
+    return merged or None
+
+
+async def request_browser_page(
+    url: str,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+) -> dict:
     """Fetch a page through the browser.
 
     Args:
         url: URL to fetch.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Structured browser response data.
     """
     async with browser_session(headless=False) as browser:
-        page = await browser.get(url)
+        page = await browser.get("about:blank")
+        await configure_page_request_settings(
+            page,
+            user_agent=user_agent,
+            headers=headers,
+            accept_invalid_certs=accept_invalid_certs,
+        )
+        await page.get(url)
         await page.sleep(2)
 
         return {
@@ -231,6 +286,7 @@ async def _fetch_page(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
     allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
@@ -240,6 +296,9 @@ async def _fetch_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -247,6 +306,7 @@ async def _fetch_page(
         url: URL to fetch.
         mode: Fetch strategy.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
@@ -256,10 +316,14 @@ async def _fetch_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Tuple of page result payload and discovered links.
     """
+    allowed_domain_set = normalize_allowed_domains(allowed_domains)
     page_data = None
     source: Literal["http", "browser"] = "http"
     fallback_used = False
@@ -280,24 +344,52 @@ async def _fetch_page(
 
     if page_data is None:
         if mode == "browser":
-            page_data = await request_browser_page(url)
+            page_data = await request_browser_page(
+                url,
+                user_agent=user_agent,
+                headers=headers,
+                accept_invalid_certs=accept_invalid_certs,
+            )
             source = "browser"
         else:
             try:
+                request_headers = build_http_headers(user_agent=user_agent, headers=headers)
                 if session is None:
-                    async with AsyncSession(impersonate="chrome", timeout=15) as owned_session:
-                        page_data = await request_page(owned_session, url)
+                    async with AsyncSession(
+                        impersonate="chrome",
+                        timeout=15,
+                        headers=request_headers,
+                    ) as owned_session:
+                        page_data = await request_page_with_verify_override(
+                            owned_session,
+                            url,
+                            accept_invalid_certs=accept_invalid_certs,
+                        )
                 else:
-                    page_data = await request_page(session, url)
+                    page_data = await request_page_with_verify_override(
+                        session,
+                        url,
+                        accept_invalid_certs=accept_invalid_certs,
+                    )
             except Exception:
                 if mode != "auto":
                     raise
-                page_data = await request_browser_page(url)
+                page_data = await request_browser_page(
+                    url,
+                    user_agent=user_agent,
+                    headers=headers,
+                    accept_invalid_certs=accept_invalid_certs,
+                )
                 source = "browser"
                 fallback_used = True
 
             if source == "http" and mode == "auto" and should_browser_fallback(page_data["status_code"], page_data["html"]):
-                browser_data = await request_browser_page(url)
+                browser_data = await request_browser_page(
+                    url,
+                    user_agent=user_agent,
+                    headers=headers,
+                    accept_invalid_certs=accept_invalid_certs,
+                )
                 browser_data["status_code"] = page_data["status_code"]
                 browser_data["ssl_fallback_used"] = page_data["ssl_fallback_used"]
                 page_data = browser_data
@@ -315,6 +407,7 @@ async def _fetch_page(
         page_data["final_url"],
         scope_domain,
         allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domain_set,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
     )
@@ -336,6 +429,7 @@ async def fetch_page(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
     allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
@@ -343,6 +437,9 @@ async def fetch_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -350,6 +447,7 @@ async def fetch_page(
         url: URL to fetch.
         mode: Fetch strategy.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
@@ -357,6 +455,9 @@ async def fetch_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Structured page details and discovered links.
@@ -365,6 +466,7 @@ async def fetch_page(
         url=url,
         mode=mode,
         allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         include_headers=include_headers,
@@ -372,6 +474,9 @@ async def fetch_page(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
     return result
 
@@ -383,6 +488,9 @@ async def fetch(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> str:
     """Fetch a URL and convert the page into markdown or plain text.
 
@@ -393,6 +501,9 @@ async def fetch(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Rendered page content.
@@ -404,6 +515,9 @@ async def fetch(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
     return render_page_content(page["html"], output_format)
 
@@ -414,12 +528,16 @@ async def crawl_one_page(
     depth: int,
     mode: Literal["fast", "auto"],
     allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -429,12 +547,16 @@ async def crawl_one_page(
         depth: Crawl depth for the page.
         mode: Crawl mode.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -444,6 +566,7 @@ async def crawl_one_page(
             url=url,
             mode="http" if mode == "fast" else "auto",
             allow_subdomains=allow_subdomains,
+            allowed_domains=allowed_domains,
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
             include_headers=include_headers,
@@ -452,6 +575,9 @@ async def crawl_one_page(
             cache=cache,
             cache_dir=cache_dir,
             cache_ttl_seconds=cache_ttl_seconds,
+            user_agent=user_agent,
+            headers=headers,
+            accept_invalid_certs=accept_invalid_certs,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -475,6 +601,9 @@ async def crawl(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    allowed_domains: list[str] | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -496,6 +625,9 @@ async def crawl(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        headers: Optional extra headers for HTTP and browser fetches.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        allowed_domains: Additional explicitly allowed domains.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -516,8 +648,10 @@ async def crawl(
         "status_code": None,
     }
     sitemap_seeds = []
+    allowed_domain_set = normalize_allowed_domains(allowed_domains)
 
-    async with AsyncSession(impersonate="chrome", timeout=15) as session:
+    request_headers = build_http_headers(user_agent=user_agent, headers=headers)
+    async with AsyncSession(impersonate="chrome", timeout=15, headers=request_headers) as session:
         if consume_crawl_budget(start_url, normalized_budget):
             queued.add(start_url)
             to_visit.append((start_url, 0))
@@ -545,7 +679,12 @@ async def crawl(
                 normalized_seed = strip_fragment(sitemap_seed)
                 if normalized_seed in queued:
                     continue
-                if not is_same_scope(normalized_seed, base_domain, allow_subdomains=allow_subdomains):
+                if not is_same_scope(
+                    normalized_seed,
+                    base_domain,
+                    allow_subdomains=allow_subdomains,
+                    allowed_domains=allowed_domain_set,
+                ):
                     continue
                 if not matches_patterns(normalized_seed, include_patterns):
                     continue
@@ -592,12 +731,16 @@ async def crawl(
                         current_depth,
                         mode,
                         allow_subdomains=allow_subdomains,
+                        allowed_domains=allowed_domains,
                         include_patterns=include_patterns,
                         exclude_patterns=exclude_patterns,
                         include_headers=include_headers,
                         cache=cache,
                         cache_dir=cache_dir,
                         cache_ttl_seconds=cache_ttl_seconds,
+                        user_agent=user_agent,
+                        headers=headers,
+                        accept_invalid_certs=accept_invalid_certs,
                     )
                     for current_url, current_depth in batch
                 )
@@ -624,6 +767,7 @@ async def crawl(
         "max_concurrency": max_concurrency,
         "max_depth": max_depth,
         "allow_subdomains": allow_subdomains,
+        "allowed_domains": allowed_domains or [],
         "respect_robots_txt": respect_robots_txt,
         "robots_url": robots_info["robots_url"],
         "crawl_delay": robots_info["crawl_delay"],

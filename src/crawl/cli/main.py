@@ -29,6 +29,30 @@ def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
     return budget
 
 
+def parse_header_entries(entries: list[str] | None) -> dict[str, str] | None:
+    """Parse CLI header entries into a header mapping.
+
+    Args:
+        entries: Header entries in ``Key: Value`` or ``key=value`` form.
+
+    Returns:
+        Header mapping or ``None``.
+    """
+    if not entries:
+        return None
+
+    headers = {}
+    for entry in entries:
+        if ":" in entry:
+            key, value = entry.split(":", 1)
+        else:
+            key, separator, value = entry.partition("=")
+            if not separator:
+                raise ValueError(f"Invalid header entry: {entry}")
+        headers[key.strip()] = value.strip()
+    return headers
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -52,11 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    fetch_parser.add_argument("--user-agent", dest="user_agent")
+    fetch_parser.add_argument("--header", action="append", dest="header_entries")
+    fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
     fetch_page_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
     fetch_page_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    fetch_page_parser.add_argument("--allow-domain", action="append", dest="allowed_domains")
     fetch_page_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
@@ -64,6 +92,9 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    fetch_page_parser.add_argument("--user-agent", dest="user_agent")
+    fetch_page_parser.add_argument("--header", action="append", dest="header_entries")
+    fetch_page_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
 
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
@@ -72,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
     crawl_parser.add_argument("--max-depth", type=int, default=2, dest="max_depth")
     crawl_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    crawl_parser.add_argument("--allow-domain", action="append", dest="allowed_domains")
     crawl_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     crawl_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
@@ -83,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--cache", action="store_true", dest="cache")
     crawl_parser.add_argument("--cache-dir", dest="cache_dir")
     crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    crawl_parser.add_argument("--header", action="append", dest="header_entries")
+    crawl_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -135,6 +169,9 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
         )
 
     if args.command == "fetch-page":
@@ -142,6 +179,7 @@ async def run_command(args: argparse.Namespace):
             args.url,
             mode=args.mode,
             allow_subdomains=args.allow_subdomains,
+            allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
             include_headers=args.include_headers,
@@ -149,6 +187,9 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
         )
 
     if args.command == "crawl":
@@ -159,6 +200,7 @@ async def run_command(args: argparse.Namespace):
             max_concurrency=args.max_concurrency,
             max_depth=args.max_depth,
             allow_subdomains=args.allow_subdomains,
+            allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
             include_headers=args.include_headers,
@@ -170,6 +212,8 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
         )
 
     if args.command == "screenshot":

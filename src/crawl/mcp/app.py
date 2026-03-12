@@ -51,6 +51,9 @@ async def fetch(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> str:
     """Run the SDK fetch operation through the MCP transport.
 
@@ -61,6 +64,9 @@ async def fetch(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Rendered page content.
@@ -72,6 +78,9 @@ async def fetch(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
 
 
@@ -80,6 +89,7 @@ async def fetch_page(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
     allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
@@ -87,6 +97,9 @@ async def fetch_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> dict:
     """Run the SDK structured page fetch through the MCP transport.
 
@@ -94,6 +107,7 @@ async def fetch_page(
         url: URL to fetch.
         mode: Fetch strategy.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers.
@@ -101,6 +115,9 @@ async def fetch_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Structured page details and discovered links.
@@ -109,6 +126,7 @@ async def fetch_page(
         url=url,
         mode=mode,
         allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         include_headers=include_headers,
@@ -116,6 +134,9 @@ async def fetch_page(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
 
 
@@ -127,6 +148,7 @@ async def crawl(
     max_concurrency: int = 4,
     max_depth: int = 2,
     allow_subdomains: bool = False,
+    allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     include_headers: bool = False,
@@ -138,6 +160,8 @@ async def crawl(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
 ) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
@@ -148,6 +172,7 @@ async def crawl(
         max_concurrency: Maximum parallel HTTP requests.
         max_depth: Maximum crawl depth from the start URL.
         allow_subdomains: Whether subdomains should be considered in-scope.
+        allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
         include_headers: Whether to include response headers in results.
@@ -159,6 +184,8 @@ async def crawl(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        headers: Optional extra headers for HTTP and browser fetches.
+        accept_invalid_certs: Whether to ignore certificate errors.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -170,6 +197,7 @@ async def crawl(
         max_concurrency=max_concurrency,
         max_depth=max_depth,
         allow_subdomains=allow_subdomains,
+        allowed_domains=allowed_domains,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         include_headers=include_headers,
@@ -181,6 +209,8 @@ async def crawl(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
     )
 
 
