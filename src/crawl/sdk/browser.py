@@ -46,13 +46,14 @@ async def configure_page_request_settings(
 
 
 @asynccontextmanager
-async def browser_session(headless: bool = False):
+async def browser_session(headless: bool = False, browser_args: list[str] | None = None):
     """Start a nodriver browser session and guarantee cleanup.
 
     Args:
         headless: Whether to launch the browser headlessly.
+        browser_args: Optional browser launch arguments.
     """
-    browser = await uc.start(headless=headless)
+    browser = await uc.start(headless=headless, browser_args=browser_args)
     try:
         yield browser
     finally:

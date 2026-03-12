@@ -1,5 +1,6 @@
 """Page parsing and content extraction helpers."""
 
+import fnmatch
 import re
 from typing import Literal
 from urllib.parse import urljoin, urlparse
@@ -43,16 +44,55 @@ def matches_patterns(url: str, patterns: list[str] | None) -> bool:
     Returns:
         ``True`` if any pattern matches or no patterns were supplied.
     """
+    return matches_patterns_with_mode(url, patterns, pattern_mode="auto")
+
+
+def matches_patterns_with_mode(
+    url: str,
+    patterns: list[str] | None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+) -> bool:
+    """Check whether a URL matches any of the provided patterns using a specific mode.
+
+    Args:
+        url: URL to inspect.
+        patterns: Pattern list.
+        pattern_mode: Matching mode.
+
+    Returns:
+        ``True`` if any pattern matches or no patterns were supplied.
+    """
     if not patterns:
         return True
 
     for pattern in patterns:
+        if pattern_mode == "substring":
+            if pattern in url:
+                return True
+            continue
+
+        if pattern_mode == "glob":
+            if fnmatch.fnmatch(url, pattern):
+                return True
+            continue
+
+        if pattern_mode == "regex":
+            try:
+                if re.search(pattern, url):
+                    return True
+            except re.error:
+                continue
+            continue
+
+        if fnmatch.fnmatch(url, pattern):
+            return True
         try:
             if re.search(pattern, url):
                 return True
         except re.error:
             if pattern in url:
                 return True
+
     return False
 
 
@@ -228,6 +268,7 @@ def parse_page_meta(
     allowed_domains: set[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
 ) -> dict:
     """Extract metadata and scoped links from HTML.
 
@@ -239,6 +280,7 @@ def parse_page_meta(
         allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
+        pattern_mode: Pattern matching mode.
 
     Returns:
         Page metadata and discovered links.
@@ -259,9 +301,9 @@ def parse_page_meta(
             allowed_domains=allowed_domains,
         ):
             continue
-        if not matches_patterns(full_url, include_patterns):
+        if not matches_patterns_with_mode(full_url, include_patterns, pattern_mode=pattern_mode):
             continue
-        if exclude_patterns and matches_patterns(full_url, exclude_patterns):
+        if exclude_patterns and matches_patterns_with_mode(full_url, exclude_patterns, pattern_mode=pattern_mode):
             continue
         if full_url not in seen_links:
             seen_links.add(full_url)

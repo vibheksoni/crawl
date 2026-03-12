@@ -24,7 +24,7 @@ from .google import (
 from .page import (
     consume_crawl_budget,
     is_same_scope,
-    matches_patterns,
+    matches_patterns_with_mode,
     normalize_allowed_domains,
     normalize_headers,
     normalize_crawl_budget,
@@ -33,6 +33,7 @@ from .page import (
     should_browser_fallback,
     strip_fragment,
 )
+from .proxy import normalize_proxy_urls, pick_proxy
 from .searxng import search_searxng
 
 
@@ -110,13 +111,19 @@ def merge_search_payloads(
     }
 
 
-async def search_google(query: str, max_results: int = 10, pages: int = 1) -> dict:
+async def search_google(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    proxy_url: str | None = None,
+) -> dict:
     """Search Google and return normalized results.
 
     Args:
         query: Search query string.
         max_results: Maximum results per page.
         pages: Number of pages to scrape.
+        proxy_url: Optional proxy URL.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -128,7 +135,8 @@ async def search_google(query: str, max_results: int = 10, pages: int = 1) -> di
     seen_urls = set()
     current_page = 0
 
-    async with browser_session(headless=False) as browser:
+    browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
+    async with browser_session(headless=False, browser_args=browser_args) as browser:
         page_obj = await browser.get(f"https://www.google.com/search?q={quote_plus(query)}")
         await page_obj.sleep(3)
 
@@ -196,6 +204,8 @@ async def websearch(
     pages: int = 1,
     provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
     searxng_url: str | None = None,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Search the web through Google or SearXNG and normalize the results.
 
@@ -205,16 +215,22 @@ async def websearch(
         pages: Number of pages to scrape.
         provider: Search provider to use.
         searxng_url: Optional SearXNG base URL.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
     """
+    normalized_proxy_urls = normalize_proxy_urls(proxy_url=proxy_url, proxy_urls=proxy_urls)
+    selected_proxy = pick_proxy(normalized_proxy_urls, 0)
+
     if provider == "searxng":
         return await search_searxng(
             query=query,
             max_results=max_results,
             pages=pages,
             searxng_url=searxng_url,
+            proxy_url=selected_proxy,
         )
     if provider == "hybrid":
         searxng_result, google_result = await asyncio.gather(
@@ -223,8 +239,9 @@ async def websearch(
                 max_results=max_results,
                 pages=pages,
                 searxng_url=searxng_url,
+                proxy_url=selected_proxy,
             ),
-            search_google(query=query, max_results=max_results, pages=pages),
+            search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy),
         )
         return merge_search_payloads(searxng_result, google_result, max_results=max_results, pages=pages)
 
@@ -235,11 +252,12 @@ async def websearch(
                 max_results=max_results,
                 pages=pages,
                 searxng_url=searxng_url,
+                proxy_url=selected_proxy,
             )
         except Exception:
-            return await search_google(query=query, max_results=max_results, pages=pages)
+            return await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
 
-    return await search_google(query=query, max_results=max_results, pages=pages)
+    return await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
 
 
 async def request_page(session: AsyncSession, url: str) -> dict:
@@ -259,6 +277,7 @@ async def request_page_with_verify_override(
     session: AsyncSession,
     url: str,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
 ) -> dict:
     """Fetch a page over HTTP with configurable certificate handling.
 
@@ -266,17 +285,22 @@ async def request_page_with_verify_override(
         session: Async HTTP session.
         url: URL to fetch.
         accept_invalid_certs: Whether to skip certificate verification.
+        proxy_url: Optional proxy URL.
 
     Returns:
         Structured HTTP response data.
     """
     try:
-        response = await session.get(url, verify=False if accept_invalid_certs else None)
+        response = await session.get(
+            url,
+            verify=False if accept_invalid_certs else None,
+            proxy=proxy_url,
+        )
         ssl_fallback_used = accept_invalid_certs
     except Exception as error:
         if accept_invalid_certs or "SSL certificate problem" not in str(error):
             raise
-        response = await session.get(url, verify=False)
+        response = await session.get(url, verify=False, proxy=proxy_url)
         ssl_fallback_used = True
 
     return {
@@ -316,6 +340,7 @@ async def request_browser_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
 ) -> dict:
     """Fetch a page through the browser.
 
@@ -324,11 +349,13 @@ async def request_browser_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional proxy URL.
 
     Returns:
         Structured browser response data.
     """
-    async with browser_session(headless=False) as browser:
+    browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
+    async with browser_session(headless=False, browser_args=browser_args) as browser:
         page = await browser.get("about:blank")
         await configure_page_request_settings(
             page,
@@ -414,6 +441,10 @@ async def _fetch_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    proxy_index: int = 0,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -434,11 +465,17 @@ async def _fetch_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        proxy_index: Round-robin proxy selection index.
 
     Returns:
         Tuple of page result payload and discovered links.
     """
     allowed_domain_set = normalize_allowed_domains(allowed_domains)
+    normalized_proxy_urls = normalize_proxy_urls(proxy_url=proxy_url, proxy_urls=proxy_urls)
+    selected_proxy = pick_proxy(normalized_proxy_urls, proxy_index)
     page_data = None
     source: Literal["http", "browser"] = "http"
     fallback_used = False
@@ -464,6 +501,7 @@ async def _fetch_page(
                 user_agent=user_agent,
                 headers=headers,
                 accept_invalid_certs=accept_invalid_certs,
+                proxy_url=selected_proxy,
             )
             source = "browser"
         else:
@@ -479,12 +517,14 @@ async def _fetch_page(
                             owned_session,
                             url,
                             accept_invalid_certs=accept_invalid_certs,
+                            proxy_url=selected_proxy,
                         )
                 else:
                     page_data = await request_page_with_verify_override(
                         session,
                         url,
                         accept_invalid_certs=accept_invalid_certs,
+                        proxy_url=selected_proxy,
                     )
             except Exception:
                 if mode != "auto":
@@ -494,6 +534,7 @@ async def _fetch_page(
                     user_agent=user_agent,
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
+                    proxy_url=selected_proxy,
                 )
                 source = "browser"
                 fallback_used = True
@@ -504,6 +545,7 @@ async def _fetch_page(
                     user_agent=user_agent,
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
+                    proxy_url=selected_proxy,
                 )
                 browser_data["status_code"] = page_data["status_code"]
                 browser_data["ssl_fallback_used"] = page_data["ssl_fallback_used"]
@@ -525,6 +567,7 @@ async def _fetch_page(
         allowed_domains=allowed_domain_set,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
     )
 
     result = build_page_result(
@@ -555,6 +598,9 @@ async def fetch_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -573,6 +619,9 @@ async def fetch_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Structured page details and discovered links.
@@ -592,6 +641,9 @@ async def fetch_page(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        pattern_mode=pattern_mode,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
     return result
 
@@ -606,6 +658,8 @@ async def fetch(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> str:
     """Fetch a URL and convert the page into markdown or plain text.
 
@@ -619,6 +673,8 @@ async def fetch(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Rendered page content.
@@ -633,6 +689,8 @@ async def fetch(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
     return render_page_content(page["html"], output_format)
 
@@ -653,6 +711,10 @@ async def crawl_one_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    proxy_index: int = 0,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -672,6 +734,10 @@ async def crawl_one_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        proxy_index: Round-robin proxy selection index.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -693,6 +759,10 @@ async def crawl_one_page(
             user_agent=user_agent,
             headers=headers,
             accept_invalid_certs=accept_invalid_certs,
+            pattern_mode=pattern_mode,
+            proxy_url=proxy_url,
+            proxy_urls=proxy_urls,
+            proxy_index=proxy_index,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -719,6 +789,9 @@ async def crawl(
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     allowed_domains: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -743,6 +816,9 @@ async def crawl(
         headers: Optional extra headers for HTTP and browser fetches.
         accept_invalid_certs: Whether to ignore certificate errors.
         allowed_domains: Additional explicitly allowed domains.
+        pattern_mode: Pattern matching mode.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -751,6 +827,7 @@ async def crawl(
     base_domain = urlparse(url).netloc
     visited = set()
     normalized_budget = normalize_crawl_budget(budget)
+    normalized_proxy_urls = normalize_proxy_urls(proxy_url=proxy_url, proxy_urls=proxy_urls)
     queued = set()
     to_visit = deque()
     results = []
@@ -801,9 +878,13 @@ async def crawl(
                     allowed_domains=allowed_domain_set,
                 ):
                     continue
-                if not matches_patterns(normalized_seed, include_patterns):
+                if not matches_patterns_with_mode(normalized_seed, include_patterns, pattern_mode=pattern_mode):
                     continue
-                if exclude_patterns and matches_patterns(normalized_seed, exclude_patterns):
+                if exclude_patterns and matches_patterns_with_mode(
+                    normalized_seed,
+                    exclude_patterns,
+                    pattern_mode=pattern_mode,
+                ):
                     continue
                 if consume_crawl_budget(normalized_seed, normalized_budget):
                     queued.add(normalized_seed)
@@ -856,8 +937,12 @@ async def crawl(
                         user_agent=user_agent,
                         headers=headers,
                         accept_invalid_certs=accept_invalid_certs,
+                        pattern_mode=pattern_mode,
+                        proxy_url=proxy_url,
+                        proxy_urls=normalized_proxy_urls,
+                        proxy_index=len(results) + batch_index,
                     )
-                    for current_url, current_depth in batch
+                    for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
             )
 
@@ -890,6 +975,8 @@ async def crawl(
         "budget": budget or {},
         "budget_remaining": normalized_budget,
         "cache": cache,
+        "pattern_mode": pattern_mode,
+        "proxy_urls": normalized_proxy_urls,
         "pages_crawled": len(results),
         "results": results,
     }

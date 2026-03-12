@@ -21,6 +21,8 @@ async def websearch(
     pages: int = 1,
     provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
     searxng_url: str | None = None,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Run the SDK web search through the MCP transport.
 
@@ -30,6 +32,8 @@ async def websearch(
         pages: Number of pages to scrape.
         provider: Search provider to use.
         searxng_url: Optional SearXNG base URL.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -40,6 +44,8 @@ async def websearch(
         pages=pages,
         provider=provider,
         searxng_url=searxng_url,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
 
 
@@ -54,6 +60,8 @@ async def fetch(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> str:
     """Run the SDK fetch operation through the MCP transport.
 
@@ -67,6 +75,8 @@ async def fetch(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Rendered page content.
@@ -81,6 +91,8 @@ async def fetch(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
 
 
@@ -92,6 +104,7 @@ async def fetch_page(
     allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     include_headers: bool = False,
     include_html: bool = False,
     cache: bool = False,
@@ -100,6 +113,8 @@ async def fetch_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Run the SDK structured page fetch through the MCP transport.
 
@@ -110,6 +125,7 @@ async def fetch_page(
         allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
+        pattern_mode: Pattern matching mode.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
         cache: Whether to use disk caching.
@@ -118,6 +134,8 @@ async def fetch_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Structured page details and discovered links.
@@ -129,6 +147,7 @@ async def fetch_page(
         allowed_domains=allowed_domains,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
         include_headers=include_headers,
         include_html=include_html,
         cache=cache,
@@ -137,6 +156,8 @@ async def fetch_page(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
 
 
@@ -151,6 +172,7 @@ async def crawl(
     allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
+    pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     include_headers: bool = False,
     respect_robots_txt: bool = False,
     sitemap_url: str | None = None,
@@ -162,6 +184,8 @@ async def crawl(
     cache_ttl_seconds: int | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
 ) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
@@ -175,6 +199,7 @@ async def crawl(
         allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns for discovered links.
         exclude_patterns: Optional exclude patterns for discovered links.
+        pattern_mode: Pattern matching mode.
         include_headers: Whether to include response headers in results.
         respect_robots_txt: Whether to enforce robots.txt access rules.
         sitemap_url: Optional sitemap URL to seed the crawl.
@@ -186,6 +211,8 @@ async def crawl(
         cache_ttl_seconds: Optional cache TTL.
         headers: Optional extra headers for HTTP and browser fetches.
         accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -200,6 +227,7 @@ async def crawl(
         allowed_domains=allowed_domains,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
+        pattern_mode=pattern_mode,
         include_headers=include_headers,
         respect_robots_txt=respect_robots_txt,
         sitemap_url=sitemap_url,
@@ -211,6 +239,8 @@ async def crawl(
         cache_ttl_seconds=cache_ttl_seconds,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
     )
 
 

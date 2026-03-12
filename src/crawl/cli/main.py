@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--pages", type=int, default=1)
     search_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="google")
     search_parser.add_argument("--searxng-url", dest="searxng_url")
+    search_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
     fetch_parser.add_argument("url", help="Page URL.")
@@ -79,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--user-agent", dest="user_agent")
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    fetch_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -87,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--allow-domain", action="append", dest="allowed_domains")
     fetch_page_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
+    fetch_page_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -95,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--user-agent", dest="user_agent")
     fetch_page_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_page_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    fetch_page_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
@@ -106,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--allow-domain", action="append", dest="allowed_domains")
     crawl_parser.add_argument("--include-pattern", action="append", dest="include_patterns")
     crawl_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
+    crawl_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     crawl_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
     crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
@@ -117,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     crawl_parser.add_argument("--header", action="append", dest="header_entries")
     crawl_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    crawl_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -159,6 +165,7 @@ async def run_command(args: argparse.Namespace):
             pages=args.pages,
             provider=provider,
             searxng_url=args.searxng_url,
+            proxy_urls=args.proxy_urls,
         )
 
     if args.command == "fetch":
@@ -172,6 +179,7 @@ async def run_command(args: argparse.Namespace):
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
         )
 
     if args.command == "fetch-page":
@@ -182,6 +190,7 @@ async def run_command(args: argparse.Namespace):
             allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
+            pattern_mode=args.pattern_mode,
             include_headers=args.include_headers,
             include_html=args.include_html,
             cache=args.cache,
@@ -190,6 +199,7 @@ async def run_command(args: argparse.Namespace):
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
         )
 
     if args.command == "crawl":
@@ -203,6 +213,7 @@ async def run_command(args: argparse.Namespace):
             allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
+            pattern_mode=args.pattern_mode,
             include_headers=args.include_headers,
             respect_robots_txt=args.respect_robots_txt,
             sitemap_url=args.sitemap_url,
@@ -214,6 +225,7 @@ async def run_command(args: argparse.Namespace):
             cache_ttl_seconds=args.cache_ttl_seconds,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
         )
 
     if args.command == "screenshot":

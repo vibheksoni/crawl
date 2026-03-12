@@ -77,11 +77,36 @@ def normalize_searxng_result(item: dict, page: int) -> dict:
     return result
 
 
+async def request_searxng_json_with_proxy(
+    session: AsyncSession,
+    url: str,
+    proxy_url: str | None = None,
+) -> dict:
+    """Fetch a JSON response from SearXNG with optional proxy support.
+
+    Args:
+        session: Async HTTP session.
+        url: Fully-qualified request URL.
+        proxy_url: Optional proxy URL.
+
+    Returns:
+        Decoded JSON response.
+    """
+    try:
+        response = await session.get(url, proxy=proxy_url)
+    except Exception as error:
+        if "SSL certificate problem" not in str(error):
+            raise
+        response = await session.get(url, verify=False, proxy=proxy_url)
+    return json.loads(response.text)
+
+
 async def search_searxng(
     query: str,
     max_results: int = 10,
     pages: int = 1,
     searxng_url: str | None = None,
+    proxy_url: str | None = None,
 ) -> dict:
     """Search SearXNG and return results mapped into the project's search schema.
 
@@ -90,6 +115,7 @@ async def search_searxng(
         max_results: Maximum results per page.
         pages: Number of pages to fetch.
         searxng_url: Optional SearXNG base URL.
+        proxy_url: Optional proxy URL.
 
     Returns:
         Search results with normalized metadata.
@@ -115,7 +141,11 @@ async def search_searxng(
                 "categories": "general",
                 "pageno": page,
             }
-            payload = await request_searxng_json(session, f"{search_endpoint}?{urlencode(params)}")
+            payload = await request_searxng_json_with_proxy(
+                session,
+                f"{search_endpoint}?{urlencode(params)}",
+                proxy_url=proxy_url,
+            )
             pages_scraped = page
 
             for item in payload.get("results", []):
@@ -140,7 +170,11 @@ async def search_searxng(
                     "categories": "videos",
                     "pageno": 1,
                 }
-                video_payload = await request_searxng_json(session, f"{search_endpoint}?{urlencode(video_params)}")
+                video_payload = await request_searxng_json_with_proxy(
+                    session,
+                    f"{search_endpoint}?{urlencode(video_params)}",
+                    proxy_url=proxy_url,
+                )
                 for item in video_payload.get("results", []):
                     normalized = normalize_searxng_result(item, 1)
                     if not normalized["link"] or normalized["link"] in seen_video_urls:
