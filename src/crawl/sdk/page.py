@@ -89,6 +89,68 @@ def normalize_headers(headers) -> dict[str, str]:
     return {str(key): str(value) for key, value in headers.items()}
 
 
+def normalize_crawl_budget(budget: dict[str, int] | None) -> dict[str, int]:
+    """Normalize crawl budget keys and values.
+
+    Args:
+        budget: Optional crawl budget mapping.
+
+    Returns:
+        Sanitized crawl budget mapping.
+    """
+    if not budget:
+        return {}
+
+    normalized = {}
+    for key, value in budget.items():
+        try:
+            remaining = max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+
+        if key == "*":
+            normalized["*"] = remaining
+            continue
+
+        parsed = urlparse(key)
+        path = parsed.path if parsed.scheme or parsed.netloc else key
+        path = path or "/"
+        if not path.startswith("/"):
+            path = f"/{path}"
+        normalized[path] = remaining
+
+    return normalized
+
+
+def consume_crawl_budget(url: str, budget_state: dict[str, int] | None) -> bool:
+    """Consume crawl budget for a URL if capacity remains.
+
+    Args:
+        url: URL being admitted to the crawl queue.
+        budget_state: Mutable crawl budget state.
+
+    Returns:
+        ``True`` when the URL can be admitted, otherwise ``False``.
+    """
+    if not budget_state:
+        return True
+
+    path = urlparse(url).path or "/"
+    matched_prefixes = [prefix for prefix in budget_state if prefix != "*" and path.startswith(prefix)]
+    matched_prefix = max(matched_prefixes, key=len) if matched_prefixes else None
+
+    if "*" in budget_state and budget_state["*"] <= 0:
+        return False
+    if matched_prefix and budget_state[matched_prefix] <= 0:
+        return False
+
+    if "*" in budget_state:
+        budget_state["*"] -= 1
+    if matched_prefix:
+        budget_state[matched_prefix] -= 1
+    return True
+
+
 def extract_page_metadata(soup, page_url: str) -> dict:
     """Extract metadata from a parsed page.
 

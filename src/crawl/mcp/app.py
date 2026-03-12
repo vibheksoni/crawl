@@ -112,6 +112,7 @@ async def crawl(
     sitemap_url: str | None = None,
     seed_sitemap: bool = False,
     user_agent: str = "*",
+    budget: dict[str, int] | None = None,
 ) -> dict:
     """Run the SDK site crawler through the MCP transport.
 
@@ -129,6 +130,7 @@ async def crawl(
         sitemap_url: Optional sitemap URL to seed the crawl.
         seed_sitemap: Whether sitemap URLs should seed the crawl.
         user_agent: User agent name used for robots.txt evaluation.
+        budget: Optional crawl budget mapping keyed by ``*`` or path prefixes.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -147,6 +149,7 @@ async def crawl(
         sitemap_url=sitemap_url,
         seed_sitemap=seed_sitemap,
         user_agent=user_agent,
+        budget=budget,
     )
 
 

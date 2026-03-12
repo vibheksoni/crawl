@@ -8,6 +8,27 @@ from pathlib import Path
 from crawl.sdk import benchmark_fast_crawl, crawl, fetch, fetch_page, screenshot, websearch
 
 
+def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
+    """Parse CLI budget entries into a budget mapping.
+
+    Args:
+        entries: Budget entries in ``pattern=limit`` form.
+
+    Returns:
+        Budget mapping or ``None``.
+    """
+    if not entries:
+        return None
+
+    budget = {}
+    for entry in entries:
+        key, separator, value = entry.partition("=")
+        if not separator:
+            raise ValueError(f"Invalid budget entry: {entry}")
+        budget[key.strip()] = int(value.strip())
+    return budget
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -52,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
     crawl_parser.add_argument("--seed-sitemap", action="store_true", dest="seed_sitemap")
     crawl_parser.add_argument("--user-agent", default="*", dest="user_agent")
+    crawl_parser.add_argument("--budget", action="append", dest="budget_entries")
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -125,6 +147,7 @@ async def run_command(args: argparse.Namespace):
             sitemap_url=args.sitemap_url,
             seed_sitemap=args.seed_sitemap,
             user_agent=args.user_agent,
+            budget=parse_budget_entries(args.budget_entries),
         )
 
     if args.command == "screenshot":

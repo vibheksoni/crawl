@@ -21,9 +21,11 @@ from .google import (
     extract_video_results,
 )
 from .page import (
+    consume_crawl_budget,
     is_same_scope,
     matches_patterns,
     normalize_headers,
+    normalize_crawl_budget,
     parse_page_meta,
     render_page_content,
     should_browser_fallback,
@@ -408,6 +410,7 @@ async def crawl(
     sitemap_url: str | None = None,
     seed_sitemap: bool = False,
     user_agent: str = "*",
+    budget: dict[str, int] | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -425,6 +428,7 @@ async def crawl(
         sitemap_url: Optional sitemap URL to seed the crawl.
         seed_sitemap: Whether sitemap URLs should seed the crawl.
         user_agent: User agent name used for robots.txt evaluation.
+        budget: Optional crawl budget mapping keyed by ``*`` or path prefixes.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -432,8 +436,9 @@ async def crawl(
     start_url = strip_fragment(url)
     base_domain = urlparse(url).netloc
     visited = set()
-    queued = {start_url}
-    to_visit = deque([(start_url, 0)])
+    normalized_budget = normalize_crawl_budget(budget)
+    queued = set()
+    to_visit = deque()
     results = []
     max_concurrency = max(1, max_concurrency)
     robots_info = {
@@ -446,6 +451,10 @@ async def crawl(
     sitemap_seeds = []
 
     async with AsyncSession(impersonate="chrome", timeout=15) as session:
+        if consume_crawl_budget(start_url, normalized_budget):
+            queued.add(start_url)
+            to_visit.append((start_url, 0))
+
         if respect_robots_txt or seed_sitemap or sitemap_url:
             robots_info = await load_robots_rules(session, start_url, user_agent=user_agent)
 
@@ -475,8 +484,9 @@ async def crawl(
                     continue
                 if exclude_patterns and matches_patterns(normalized_seed, exclude_patterns):
                     continue
-                queued.add(normalized_seed)
-                to_visit.append((normalized_seed, 0))
+                if consume_crawl_budget(normalized_seed, normalized_budget):
+                    queued.add(normalized_seed)
+                    to_visit.append((normalized_seed, 0))
 
         while to_visit and len(visited) < max_pages:
             remaining_slots = max_pages - len(visited)
@@ -531,8 +541,9 @@ async def crawl(
                 for link in links:
                     normalized_link = strip_fragment(link)
                     if normalized_link not in visited and normalized_link not in queued:
-                        queued.add(normalized_link)
-                        to_visit.append((normalized_link, next_depth))
+                        if consume_crawl_budget(normalized_link, normalized_budget):
+                            queued.add(normalized_link)
+                            to_visit.append((normalized_link, next_depth))
 
             if robots_info["crawl_delay"]:
                 await asyncio.sleep(float(robots_info["crawl_delay"]))
@@ -547,6 +558,8 @@ async def crawl(
         "robots_url": robots_info["robots_url"],
         "crawl_delay": robots_info["crawl_delay"],
         "sitemap_seed_count": len(sitemap_seeds),
+        "budget": budget or {},
+        "budget_remaining": normalized_budget,
         "pages_crawled": len(results),
         "results": results,
     }
