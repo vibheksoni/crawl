@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, screenshot, websearch
+from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
     search_parser.add_argument(
         "--scrape-format",
-        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts"],
+        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies"],
         action="append",
         dest="scrape_formats",
     )
@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("url", help="Page URL.")
     scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"],
         action="append",
         dest="formats",
     )
@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
     batch_scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"],
         action="append",
         dest="formats",
     )
@@ -266,6 +266,36 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(query_parser)
 
+    tech_parser = subparsers.add_parser("tech", help="Fingerprint technologies on a page or small site slice.")
+    tech_parser.add_argument("url", help="Start URL.")
+    tech_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    tech_parser.add_argument("--max-pages", type=int, default=1, dest="max_pages")
+    tech_parser.add_argument("--max-depth", type=int, default=0, dest="max_depth")
+    tech_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
+    tech_parser.add_argument("--cache", action="store_true", dest="cache")
+    tech_parser.add_argument("--cache-dir", dest="cache_dir")
+    tech_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    tech_parser.add_argument("--user-agent", dest="user_agent")
+    tech_parser.add_argument("--header", action="append", dest="header_entries")
+    tech_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    tech_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    tech_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    tech_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    tech_parser.add_argument("--aggression", type=int, choices=[1, 2, 3], default=1)
+    add_common_output_options(tech_parser)
+
+    tech_list_parser = subparsers.add_parser("tech-list", help="List available technology definitions.")
+    tech_list_parser.add_argument("--search", dest="search")
+    tech_list_parser.add_argument("--limit", type=int, default=50)
+    add_common_output_options(tech_list_parser)
+
+    tech_info_parser = subparsers.add_parser("tech-info", help="Show one technology definition by exact name.")
+    tech_info_parser.add_argument("name", help="Technology name.")
+    add_common_output_options(tech_info_parser)
+
+    tech_update_parser = subparsers.add_parser("tech-update", help="Refresh the technology definitions file.")
+    tech_update_parser.add_argument("--tech-file", dest="tech_file")
+
     research_parser = subparsers.add_parser("research", help="Run a multi-source research workflow over search results.")
     research_parser.add_argument("query", help="Research query.")
     research_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
@@ -304,6 +334,8 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--include-app-state", action="store_true", dest="include_app_state")
     fetch_page_parser.add_argument("--include-contacts", action="store_true", dest="include_contacts")
+    fetch_page_parser.add_argument("--include-technologies", action="store_true", dest="include_technologies")
+    fetch_page_parser.add_argument("--technology-aggression", type=int, choices=[1, 2, 3], default=1, dest="technology_aggression")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -328,6 +360,8 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     crawl_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
     crawl_parser.add_argument("--dedupe-by-signature", action="store_true", dest="dedupe_by_signature")
+    crawl_parser.add_argument("--include-technologies", action="store_true", dest="include_technologies")
+    crawl_parser.add_argument("--technology-aggression", type=int, choices=[1, 2, 3], default=1, dest="technology_aggression")
     crawl_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
     crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     crawl_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
@@ -436,7 +470,6 @@ async def run_command(args: argparse.Namespace):
             proxy_urls=args.proxy_urls,
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
-            state_path=args.state_path,
         )
 
     if args.command == "scrape":
@@ -471,6 +504,38 @@ async def run_command(args: argparse.Namespace):
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
         )
+
+    if args.command == "tech":
+        return await tech(
+            args.url,
+            mode=args.mode,
+            max_pages=args.max_pages,
+            max_depth=args.max_depth,
+            allow_subdomains=args.allow_subdomains,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+            aggression=args.aggression,
+        )
+
+    if args.command == "tech-list":
+        results = search_technology_definitions(args.search, limit=args.limit)
+        return {"count": len(results), "results": results}
+
+    if args.command == "tech-info":
+        result = get_technology_definition(args.name)
+        if result is None:
+            raise ValueError(f"Unknown technology: {args.name}")
+        return result
+
+    if args.command == "tech-update":
+        return update_technology_definitions(args.tech_file)
 
     if args.command == "research":
         return await research(
@@ -602,6 +667,8 @@ async def run_command(args: argparse.Namespace):
             include_html=args.include_html,
             include_app_state=args.include_app_state,
             include_contacts=args.include_contacts,
+            include_technologies=args.include_technologies,
+            technology_aggression=args.technology_aggression,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -627,6 +694,7 @@ async def run_command(args: argparse.Namespace):
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
             dedupe_by_signature=args.dedupe_by_signature,
+            include_technologies=args.include_technologies,
             include_requests=args.include_requests,
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
@@ -638,6 +706,7 @@ async def run_command(args: argparse.Namespace):
             min_concurrency=args.min_concurrency,
             cpu_target_percent=args.cpu_target_percent,
             memory_target_percent=args.memory_target_percent,
+            technology_aggression=args.technology_aggression,
             minimum_delay_ms=args.minimum_delay_ms,
             maximum_delay_ms=args.maximum_delay_ms,
             include_headers=args.include_headers,

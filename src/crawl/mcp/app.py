@@ -13,11 +13,15 @@ from crawl.sdk import batch_scrape as sdk_batch_scrape
 from crawl.sdk import export_dataset as sdk_export_dataset
 from crawl.sdk import extract as sdk_extract
 from crawl.sdk import forms as sdk_forms
+from crawl.sdk import get_technology_definition as sdk_get_technology_definition
 from crawl.sdk import map_site as sdk_map_site
 from crawl.sdk import query_page as sdk_query_page
 from crawl.sdk import research as sdk_research
 from crawl.sdk import scrape as sdk_scrape
 from crawl.sdk import screenshot as sdk_screenshot
+from crawl.sdk import search_technology_definitions as sdk_search_technology_definitions
+from crawl.sdk import tech as sdk_tech
+from crawl.sdk import update_technology_definitions as sdk_update_technology_definitions
 from crawl.sdk import websearch as sdk_websearch
 
 mcp = FastMCP("crawl-mcp")
@@ -34,7 +38,7 @@ async def websearch(
     proxy_urls: list[str] | None = None,
     scrape_results: bool = False,
     scrape_limit: int = 3,
-    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata", "app_state", "contacts"]] | None = None,
+    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies"]] | None = None,
     only_main_content: bool = True,
     cache: bool = False,
     cache_dir: str | None = None,
@@ -150,7 +154,7 @@ async def fetch(
 @mcp.tool()
 async def scrape(
     url: str,
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -190,7 +194,7 @@ async def scrape(
 @mcp.tool()
 async def batch_scrape(
     urls: list[str],
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -458,6 +462,68 @@ async def contacts(
 
 
 @mcp.tool()
+async def tech(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    max_pages: int = 1,
+    max_depth: int = 0,
+    allow_subdomains: bool = False,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    aggression: int = 1,
+) -> dict:
+    """Run the SDK technology fingerprinting workflow through the MCP transport."""
+    return await sdk_tech(
+        url=url,
+        mode=mode,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        allow_subdomains=allow_subdomains,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+        aggression=aggression,
+    )
+
+
+@mcp.tool()
+async def tech_list(search: str | None = None, limit: int = 50) -> dict:
+    """List available technology definitions."""
+    results = sdk_search_technology_definitions(search=search, limit=limit)
+    return {"count": len(results), "results": results}
+
+
+@mcp.tool()
+async def tech_info(name: str) -> dict:
+    """Get one technology definition by exact name."""
+    result = sdk_get_technology_definition(name)
+    if result is None:
+        raise ValueError(f"Unknown technology: {name}")
+    return result
+
+
+@mcp.tool()
+async def tech_update() -> str:
+    """Refresh the bundled technology definitions file."""
+    return sdk_update_technology_definitions()
+
+
+@mcp.tool()
 async def fetch_page(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -477,6 +543,8 @@ async def fetch_page(
     include_html: bool = False,
     include_app_state: bool = False,
     include_contacts: bool = False,
+    include_technologies: bool = False,
+    technology_aggression: int = 1,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -507,6 +575,8 @@ async def fetch_page(
         include_html: Whether to include raw HTML.
         include_app_state: Whether to extract embedded hydration payloads.
         include_contacts: Whether to extract contact and social details.
+        include_technologies: Whether to extract technology fingerprints.
+        technology_aggression: Technology fingerprint aggression level.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -538,6 +608,8 @@ async def fetch_page(
         include_html=include_html,
         include_app_state=include_app_state,
         include_contacts=include_contacts,
+        include_technologies=include_technologies,
+        technology_aggression=technology_aggression,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -565,6 +637,7 @@ async def crawl(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     full_resources: bool = False,
     dedupe_by_signature: bool = False,
+    include_technologies: bool = False,
     include_requests: bool = False,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
@@ -576,6 +649,7 @@ async def crawl(
     min_concurrency: int = 1,
     cpu_target_percent: float = 75.0,
     memory_target_percent: float = 80.0,
+    technology_aggression: int = 1,
     minimum_delay_ms: int = 0,
     maximum_delay_ms: int = 5000,
     state_path: str | None = None,
@@ -612,6 +686,7 @@ async def crawl(
         pattern_mode: Pattern matching mode.
         full_resources: Whether to include resource URLs in crawl discovery.
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
+        include_technologies: Whether to extract technology fingerprints for each page.
         include_requests: Whether to capture browser requests.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
@@ -623,6 +698,7 @@ async def crawl(
         min_concurrency: Lower bound for autoscaled concurrency.
         cpu_target_percent: Preferred CPU ceiling for autoscaling.
         memory_target_percent: Preferred memory ceiling for autoscaling.
+        technology_aggression: Technology fingerprint aggression level.
         minimum_delay_ms: Lower bound for adaptive delay.
         maximum_delay_ms: Upper bound for adaptive delay.
         state_path: Optional persisted crawl state file.
@@ -660,6 +736,7 @@ async def crawl(
         pattern_mode=pattern_mode,
         full_resources=full_resources,
         dedupe_by_signature=dedupe_by_signature,
+        include_technologies=include_technologies,
         include_requests=include_requests,
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
@@ -671,6 +748,7 @@ async def crawl(
         min_concurrency=min_concurrency,
         cpu_target_percent=cpu_target_percent,
         memory_target_percent=memory_target_percent,
+        technology_aggression=technology_aggression,
         minimum_delay_ms=minimum_delay_ms,
         maximum_delay_ms=maximum_delay_ms,
         state_path=state_path,

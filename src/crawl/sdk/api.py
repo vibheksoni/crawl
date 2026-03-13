@@ -56,6 +56,7 @@ from .page import (
 )
 from .proxy import normalize_proxy_urls, pick_proxy
 from .scrape import ScrapeFormat, build_scrape_result
+from .tech import fingerprint_page
 from .searxng import search_searxng
 
 
@@ -792,6 +793,7 @@ def build_page_result(
     app_state: dict | None = None,
     contacts: dict | None = None,
     blocked_reason: str | None = None,
+    technologies: dict | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -806,6 +808,7 @@ def build_page_result(
         app_state: Optional embedded hydration and structured payloads.
         contacts: Optional extracted contact and social details.
         blocked_reason: Optional detected block reason.
+        technologies: Optional technology fingerprint payload.
 
     Returns:
         Normalized page result payload.
@@ -845,6 +848,8 @@ def build_page_result(
         result["contacts"] = contacts
     if blocked_reason is not None:
         result["blocked_reason"] = blocked_reason
+    if technologies is not None:
+        result["technologies"] = technologies
 
     if include_headers:
         result["headers"] = page_data["headers"]
@@ -888,6 +893,8 @@ async def _fetch_page(
     include_app_state: bool = False,
     include_contacts: bool = False,
     hooks: dict | None = None,
+    include_technologies: bool = False,
+    technology_aggression: int = 1,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -925,6 +932,8 @@ async def _fetch_page(
         include_app_state: Whether to extract embedded hydration payloads.
         include_contacts: Whether to extract contact and social details.
         hooks: Optional lifecycle hook mapping.
+        include_technologies: Whether to extract technology fingerprints.
+        technology_aggression: Technology fingerprint aggression level.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -1130,6 +1139,16 @@ async def _fetch_page(
         )
         app_state = extract_app_state(page_data["html"]) if include_app_state else None
         contacts = extract_contacts_from_html(page_data["html"], page_data["final_url"]) if include_contacts else None
+        technologies = (
+            fingerprint_page(
+                page_data["final_url"],
+                page_data["html"],
+                headers=page_data.get("headers"),
+                aggression=technology_aggression,
+            )
+            if include_technologies
+            else None
+        )
     else:
         page_meta = {
             "title": "",
@@ -1150,6 +1169,7 @@ async def _fetch_page(
         forms = [] if include_forms else None
         app_state = None
         contacts = None
+        technologies = None
 
     result = build_page_result(
         page_data,
@@ -1167,6 +1187,7 @@ async def _fetch_page(
         app_state=app_state,
         contacts=contacts,
         blocked_reason=blocked_reason,
+        technologies=technologies,
     )
     await run_named_hook(hooks, "on_request_end", result)
     return result, page_meta["links"]
@@ -1203,6 +1224,8 @@ async def fetch_page(
     include_app_state: bool = False,
     include_contacts: bool = False,
     hooks: dict | None = None,
+    include_technologies: bool = False,
+    technology_aggression: int = 1,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -1237,6 +1260,8 @@ async def fetch_page(
         include_app_state: Whether to extract embedded hydration payloads.
         include_contacts: Whether to extract contact and social details.
         hooks: Optional lifecycle hook mapping.
+        include_technologies: Whether to extract technology fingerprints.
+        technology_aggression: Technology fingerprint aggression level.
 
     Returns:
         Structured page details and discovered links.
@@ -1272,6 +1297,8 @@ async def fetch_page(
         include_app_state=include_app_state,
         include_contacts=include_contacts,
         hooks=hooks,
+        include_technologies=include_technologies,
+        technology_aggression=technology_aggression,
     )
     return result
 
@@ -1382,6 +1409,7 @@ async def scrape(
         include_headers=True,
         include_app_state=bool(formats and "app_state" in formats),
         include_contacts=bool(formats and "contacts" in formats),
+        include_technologies=bool(formats and "technologies" in formats),
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -1454,6 +1482,129 @@ async def contacts(
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
         "contacts": page.get("contacts", {}),
+    }
+
+
+async def tech(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    max_pages: int = 1,
+    max_depth: int = 0,
+    allow_subdomains: bool = False,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    aggression: int = 1,
+) -> dict:
+    """Fingerprint technologies on one page or a small site slice.
+
+    Args:
+        url: Starting URL.
+        mode: Fetch mode.
+        max_pages: Maximum pages to fingerprint.
+        max_depth: Maximum crawl depth when scanning multiple pages.
+        allow_subdomains: Whether subdomains are in scope for multi-page scans.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        aggression: Technology fingerprint aggression level.
+
+    Returns:
+        Technology fingerprint payload.
+    """
+    scan_candidates = [url]
+    if "://" not in url:
+        scan_candidates = [f"https://{url}", f"http://{url}"]
+
+    if max_pages <= 1:
+        results = []
+        for candidate in scan_candidates:
+            try:
+                page = await fetch_page(
+                    url=candidate,
+                    mode=mode,
+                    include_technologies=True,
+                    cache=cache,
+                    cache_dir=cache_dir,
+                    cache_ttl_seconds=cache_ttl_seconds,
+                    user_agent=user_agent,
+                    headers=headers,
+                    accept_invalid_certs=accept_invalid_certs,
+                    proxy_url=proxy_url,
+                    proxy_urls=proxy_urls,
+                    max_retries=max_retries,
+                    retry_backoff_ms=retry_backoff_ms,
+                    technology_aggression=aggression,
+                )
+            except Exception as error:
+                results.append(
+                    {
+                        "url": candidate,
+                        "error": str(error),
+                    }
+                )
+                continue
+            results.append(
+                {
+                    "url": page["final_url"],
+                    "title": page.get("title", ""),
+                    "technologies": page.get("technologies", {}),
+                }
+            )
+        return {
+            "start_url": url,
+            "pages_scanned": len([item for item in results if "error" not in item]),
+            "results": results,
+            "technologies": next((item.get("technologies", {}) for item in results if item.get("technologies")), {}),
+        }
+
+    crawl_result = await crawl(
+        url=url,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        mode="browser" if mode == "browser" else "auto" if mode == "auto" else "fast",
+        allow_subdomains=allow_subdomains,
+        include_technologies=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent or "*",
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+        technology_aggression=aggression,
+    )
+    results = [
+        {
+            "url": item.get("final_url") or item.get("url"),
+            "title": item.get("title", ""),
+            "technologies": item.get("technologies", {}),
+        }
+        for item in crawl_result.get("results", [])
+        if "error" not in item and "blocked_by" not in item
+    ]
+    return {
+        "start_url": url,
+        "pages_scanned": len(results),
+        "results": results,
+        "crawl": crawl_result,
     }
 
 
@@ -2040,6 +2191,8 @@ async def crawl_one_page(
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
     hooks: dict | None = None,
+    include_technologies: bool = False,
+    technology_aggression: int = 1,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -2072,6 +2225,8 @@ async def crawl_one_page(
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
         hooks: Optional lifecycle hook mapping.
+        include_technologies: Whether to extract technology fingerprints.
+        technology_aggression: Technology fingerprint aggression level.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -2106,6 +2261,8 @@ async def crawl_one_page(
             retry_backoff_ms=retry_backoff_ms,
             retry_status_codes=retry_status_codes,
             hooks=hooks,
+            include_technologies=include_technologies,
+            technology_aggression=technology_aggression,
         )
     except Exception as error:
         await run_named_hook(
@@ -2166,6 +2323,8 @@ async def crawl(
     cpu_target_percent: float = 75.0,
     memory_target_percent: float = 80.0,
     hooks: dict | None = None,
+    include_technologies: bool = False,
+    technology_aggression: int = 1,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -2215,6 +2374,8 @@ async def crawl(
         cpu_target_percent: Preferred CPU ceiling for autoscaling.
         memory_target_percent: Preferred memory ceiling for autoscaling.
         hooks: Optional lifecycle hook mapping.
+        include_technologies: Whether to extract technology fingerprints for each page.
+        technology_aggression: Technology fingerprint aggression level for each page.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -2439,6 +2600,8 @@ async def crawl(
                         retry_backoff_ms=retry_backoff_ms,
                         retry_status_codes=retry_status_codes,
                         hooks=hooks,
+                        include_technologies=include_technologies,
+                        technology_aggression=technology_aggression,
                     )
                     for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
@@ -2573,6 +2736,8 @@ async def crawl(
         "cpu_target_percent": cpu_target_percent,
         "memory_target_percent": memory_target_percent,
         "autoscale_snapshots": autoscale_snapshots,
+        "include_technologies": include_technologies,
+        "technology_aggression": technology_aggression,
         "pages_crawled": len(results),
         "results": results,
     }
