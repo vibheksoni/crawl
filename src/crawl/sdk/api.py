@@ -1498,6 +1498,7 @@ async def query_page(
         mode=mode,
         include_html=True,
         include_app_state=True,
+        include_contacts=True,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -1517,6 +1518,7 @@ async def query_page(
     )
 
     app_state = page.get("app_state", {})
+    result["contacts"] = page.get("contacts", {})
     result["app_state_summary"] = app_state.get("summary", {})
 
     app_state_text = render_app_state_text(app_state)
@@ -1536,6 +1538,162 @@ async def query_page(
     result["app_state_fit_chunks"] = app_state_fit_chunks
     result["app_state_fit_text"] = "\n\n---\n\n".join(item["text"] for item in app_state_fit_chunks)
     return result
+
+
+def merge_research_chunks(source_results: list[dict], top_k: int = 10) -> list[dict]:
+    """Merge per-source query chunks into a ranked research result set.
+
+    Args:
+        source_results: Query results enriched with source metadata.
+        top_k: Maximum number of merged chunks to return.
+
+    Returns:
+        Ranked research chunk payloads.
+    """
+    merged = []
+    seen = set()
+
+    for source in source_results:
+        source_rank = source.get("source_rank", 0)
+        rank_bonus = max(0.0, 1.0 - (source_rank * 0.1))
+
+        for kind, chunks in (
+            ("content", source.get("fit_chunks", [])),
+            ("app_state", source.get("app_state_fit_chunks", [])),
+        ):
+            for chunk in chunks:
+                text = chunk.get("text", "").strip()
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                merged.append(
+                    {
+                        "url": source.get("url"),
+                        "title": source.get("title") or source.get("metadata", {}).get("title", ""),
+                        "kind": kind,
+                        "score": round(float(chunk.get("score", 0.0)) + rank_bonus, 6),
+                        "text": text,
+                        "source_rank": source_rank,
+                    }
+                )
+
+    merged.sort(key=lambda item: (item["score"], -item["source_rank"]), reverse=True)
+    return merged[: max(1, top_k)]
+
+
+async def research(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    research_limit: int = 5,
+    max_concurrency: int = 4,
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "auto",
+    searxng_url: str | None = None,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Run a multi-source research workflow over search results.
+
+    Args:
+        query: Research query.
+        max_results: Maximum search results per page.
+        pages: Number of search result pages.
+        research_limit: Number of top results to analyze deeply.
+        max_concurrency: Maximum concurrent deep page analyses.
+        provider: Search provider.
+        searxng_url: Optional SearXNG base URL.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+
+    Returns:
+        Search results plus ranked cross-source research chunks.
+    """
+    search_payload = await websearch(
+        query=query,
+        max_results=max_results,
+        pages=pages,
+        provider=provider,
+        searxng_url=searxng_url,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        scrape_results=False,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+    target_results = [item for item in search_payload.get("results", []) if item.get("link")][: max(1, research_limit)]
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+
+    async def research_one(index: int, item: dict) -> dict:
+        async with semaphore:
+            try:
+                query_result = await query_page(
+                    item["link"],
+                    query,
+                    mode="auto",
+                    cache=cache,
+                    cache_dir=cache_dir,
+                    cache_ttl_seconds=cache_ttl_seconds,
+                    user_agent=user_agent,
+                    headers=headers,
+                    accept_invalid_certs=accept_invalid_certs,
+                    proxy_url=proxy_url,
+                    proxy_urls=proxy_urls,
+                    max_retries=max_retries,
+                    retry_backoff_ms=retry_backoff_ms,
+                )
+                query_result["url"] = item["link"]
+                query_result["title"] = item.get("title", "")
+                query_result["description"] = item.get("description", "")
+                query_result["source_rank"] = index
+                return query_result
+            except Exception as error:
+                return {
+                    "url": item.get("link"),
+                    "title": item.get("title", ""),
+                    "description": item.get("description", ""),
+                    "source_rank": index,
+                    "error": str(error),
+                    "fit_chunks": [],
+                    "app_state_fit_chunks": [],
+                }
+
+    source_results = await asyncio.gather(*(research_one(index, item) for index, item in enumerate(target_results)))
+    merged_chunks = merge_research_chunks([item for item in source_results if "error" not in item], top_k=10)
+
+    return {
+        "query": query,
+        "provider": search_payload.get("provider"),
+        "providers": search_payload.get("providers"),
+        "search_count": search_payload.get("count", 0),
+        "research_limit": research_limit,
+        "source_count": len(source_results),
+        "sources": source_results,
+        "merged_chunks": merged_chunks,
+        "merged_text": "\n\n---\n\n".join(item["text"] for item in merged_chunks),
+        "search": search_payload,
+    }
 
 
 async def map_site(

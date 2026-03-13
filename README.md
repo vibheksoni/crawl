@@ -51,7 +51,7 @@ python -m pip install -r requirements.txt
 ```python
 import asyncio
 
-from crawl.sdk import batch_scrape, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, websearch
+from crawl.sdk import batch_scrape, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, websearch
 
 
 async def main() -> None:
@@ -99,6 +99,13 @@ async def main() -> None:
     page_query = await query_page(
         "https://www.python.org",
         "data science",
+        cache=True,
+    )
+    research_result = await research(
+        "python async browser automation",
+        max_results=5,
+        pages=1,
+        research_limit=3,
         cache=True,
     )
     form_data = await forms(
@@ -166,6 +173,7 @@ async def main() -> None:
     print(page_query["fit_chunks"][0]["score"])
     print(form_data["count"])
     print(contact_data["contacts"]["social_count"])
+    print(research_result["merged_chunks"][0]["url"])
     print(page["cache_hit"])
     print(page["signature"])
     print(len(browser_page["requests"]))
@@ -193,6 +201,7 @@ python cli.py extract https://www.python.org/events/python-events/ --schema-file
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
 python cli.py contacts https://www.python.org --cache
 python cli.py query https://www.python.org "data science" --cache
+python cli.py research "python async browser automation" --provider auto --max-results 5 --pages 1 --research-limit 3 --cache
 python cli.py fetch https://example.com --format text --mode auto --cache --cache-dir .crawl_cache
 python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250 --include-app-state --include-contacts
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
@@ -244,6 +253,7 @@ crawl-mcp
 - `forms`: extracts forms and can generate safe fill previews
 - `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
+- `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
 - `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
+from crawl.sdk import batch_scrape, benchmark_fast_crawl, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -264,6 +264,25 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(query_parser)
 
+    research_parser = subparsers.add_parser("research", help="Run a multi-source research workflow over search results.")
+    research_parser.add_argument("query", help="Research query.")
+    research_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
+    research_parser.add_argument("--pages", type=int, default=1)
+    research_parser.add_argument("--research-limit", type=int, default=5, dest="research_limit")
+    research_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
+    research_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="auto")
+    research_parser.add_argument("--searxng-url", dest="searxng_url")
+    research_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    research_parser.add_argument("--cache", action="store_true", dest="cache")
+    research_parser.add_argument("--cache-dir", dest="cache_dir")
+    research_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    research_parser.add_argument("--user-agent", dest="user_agent")
+    research_parser.add_argument("--header", action="append", dest="header_entries")
+    research_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    research_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    research_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    add_common_output_options(research_parser)
+
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
     fetch_page_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
@@ -435,6 +454,26 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+        )
+
+    if args.command == "research":
+        return await research(
+            args.query,
+            max_results=args.max_results,
+            pages=args.pages,
+            research_limit=args.research_limit,
+            max_concurrency=args.max_concurrency,
+            provider=args.provider,
+            searxng_url=args.searxng_url,
+            proxy_urls=args.proxy_urls,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
         )

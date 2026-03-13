@@ -14,6 +14,7 @@ from crawl.sdk import extract as sdk_extract
 from crawl.sdk import forms as sdk_forms
 from crawl.sdk import map_site as sdk_map_site
 from crawl.sdk import query_page as sdk_query_page
+from crawl.sdk import research as sdk_research
 from crawl.sdk import scrape as sdk_scrape
 from crawl.sdk import screenshot as sdk_screenshot
 from crawl.sdk import websearch as sdk_websearch
@@ -308,6 +309,48 @@ async def query(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+
+
+@mcp.tool()
+async def research(
+    query: str,
+    max_results: int = 10,
+    pages: int = 1,
+    research_limit: int = 5,
+    max_concurrency: int = 4,
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "auto",
+    searxng_url: str | None = None,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Run the SDK multi-source research workflow through the MCP transport."""
+    return await sdk_research(
+        query=query,
+        max_results=max_results,
+        pages=pages,
+        research_limit=research_limit,
+        max_concurrency=max_concurrency,
+        provider=provider,
+        searxng_url=searxng_url,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
