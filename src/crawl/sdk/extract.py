@@ -1,5 +1,6 @@
 """Deterministic structured extraction helpers."""
 
+import re
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -23,6 +24,20 @@ def extract_field_value(scope, field: dict, page_url: str):
     if kind == "constant":
         return field.get("value")
 
+    if kind == "regex":
+        pattern = field.get("pattern")
+        source = field.get("source", "text")
+        if not pattern:
+            return None
+        if source == "html":
+            haystack = str(scope)
+        else:
+            haystack = scope.get_text(" ", strip=True)
+        match = re.search(pattern, haystack, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            return None
+        return match.group(1) if match.groups() else match.group(0)
+
     if kind == "list_text":
         if not selector:
             return []
@@ -37,6 +52,16 @@ def extract_field_value(scope, field: dict, page_url: str):
             if value:
                 values.append(urljoin(page_url, value) if field.get("absolute") else value)
         return values
+
+    if kind in {"nested", "list_nested"}:
+        nested_schema = {
+            "baseSelector": field.get("selector"),
+            "multiple": kind == "list_nested" or field.get("multiple", False),
+            "fields": field.get("fields", []),
+        }
+        if kind == "nested":
+            nested_schema["multiple"] = False
+        return extract_structured_data(str(scope), page_url, nested_schema)
 
     target = scope.select_one(selector) if selector else scope
     if target is None:
