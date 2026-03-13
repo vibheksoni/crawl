@@ -36,6 +36,7 @@ from .google import (
     extract_people_also_ask,
     extract_video_results,
 )
+from .hooks import run_named_hook
 from .page import (
     compute_page_signature,
     consume_crawl_budget,
@@ -886,6 +887,7 @@ async def _fetch_page(
     retry_status_codes: list[int] | None = None,
     include_app_state: bool = False,
     include_contacts: bool = False,
+    hooks: dict | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -922,6 +924,7 @@ async def _fetch_page(
         retry_status_codes: Optional retryable status override.
         include_app_state: Whether to extract embedded hydration payloads.
         include_contacts: Whether to extract contact and social details.
+        hooks: Optional lifecycle hook mapping.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -949,6 +952,16 @@ async def _fetch_page(
             cache_hit = True
 
     if page_data is None:
+        await run_named_hook(
+            hooks,
+            "on_request_start",
+            {
+                "url": url,
+                "mode": mode,
+                "proxy_url": selected_proxy,
+                "depth": depth,
+            },
+        )
         if mode == "browser":
             page_data = await request_browser_page(
                 url,
@@ -1155,6 +1168,7 @@ async def _fetch_page(
         contacts=contacts,
         blocked_reason=blocked_reason,
     )
+    await run_named_hook(hooks, "on_request_end", result)
     return result, page_meta["links"]
 
 
@@ -1188,6 +1202,7 @@ async def fetch_page(
     retry_status_codes: list[int] | None = None,
     include_app_state: bool = False,
     include_contacts: bool = False,
+    hooks: dict | None = None,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -1221,6 +1236,7 @@ async def fetch_page(
         retry_status_codes: Optional retryable status override.
         include_app_state: Whether to extract embedded hydration payloads.
         include_contacts: Whether to extract contact and social details.
+        hooks: Optional lifecycle hook mapping.
 
     Returns:
         Structured page details and discovered links.
@@ -1255,6 +1271,7 @@ async def fetch_page(
         retry_status_codes=retry_status_codes,
         include_app_state=include_app_state,
         include_contacts=include_contacts,
+        hooks=hooks,
     )
     return result
 
@@ -2022,6 +2039,7 @@ async def crawl_one_page(
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
+    hooks: dict | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -2053,6 +2071,7 @@ async def crawl_one_page(
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
+        hooks: Optional lifecycle hook mapping.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -2086,8 +2105,18 @@ async def crawl_one_page(
             max_retries=max_retries,
             retry_backoff_ms=retry_backoff_ms,
             retry_status_codes=retry_status_codes,
+            hooks=hooks,
         )
     except Exception as error:
+        await run_named_hook(
+            hooks,
+            "on_error",
+            {
+                "url": url,
+                "depth": depth,
+                "error": str(error),
+            },
+        )
         return {"url": url, "depth": depth, "error": str(error)}, []
 
 
@@ -2136,6 +2165,7 @@ async def crawl(
     min_concurrency: int = 1,
     cpu_target_percent: float = 75.0,
     memory_target_percent: float = 80.0,
+    hooks: dict | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -2184,6 +2214,7 @@ async def crawl(
         min_concurrency: Lower bound for autoscaled concurrency.
         cpu_target_percent: Preferred CPU ceiling for autoscaling.
         memory_target_percent: Preferred memory ceiling for autoscaling.
+        hooks: Optional lifecycle hook mapping.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -2264,6 +2295,17 @@ async def crawl(
         )
 
     request_headers = build_http_headers(user_agent=user_agent, headers=headers)
+    await run_named_hook(
+        hooks,
+        "on_crawl_start",
+        {
+            "url": url,
+            "start_url": start_url,
+            "mode": mode,
+            "crawl_strategy": crawl_strategy,
+            "max_pages": max_pages,
+        },
+    )
     async with AsyncSession(impersonate="chrome", timeout=15, headers=request_headers) as session:
         if not resumed_from_state and consume_crawl_budget(start_url, normalized_budget):
             queued.add(start_url)
@@ -2323,6 +2365,15 @@ async def crawl(
                     continue
                 if consume_crawl_budget(normalized_seed, normalized_budget):
                     queued.add(normalized_seed)
+                    await run_named_hook(
+                        hooks,
+                        "on_enqueue",
+                        {
+                            "url": normalized_seed,
+                            "depth": 0,
+                            "reason": "sitemap",
+                        },
+                    )
                     frontier_push(to_visit, normalized_seed, 0, strategy=crawl_strategy, query=crawl_query)
 
         persist_state(completed=False)
@@ -2387,6 +2438,7 @@ async def crawl(
                         max_retries=max_retries,
                         retry_backoff_ms=retry_backoff_ms,
                         retry_status_codes=retry_status_codes,
+                        hooks=hooks,
                     )
                     for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
@@ -2400,6 +2452,7 @@ async def crawl(
                 elif signature:
                     seen_signatures[signature] = result["url"]
                 results.append(result)
+                await run_named_hook(hooks, "on_result", result)
                 if dedupe_by_signature and result.get("is_duplicate"):
                     continue
                 next_depth = result.get("depth", 0) + 1
@@ -2410,6 +2463,16 @@ async def crawl(
                     if normalized_link not in visited and normalized_link not in queued:
                         if consume_crawl_budget(normalized_link, normalized_budget):
                             queued.add(normalized_link)
+                            await run_named_hook(
+                                hooks,
+                                "on_enqueue",
+                                {
+                                    "url": normalized_link,
+                                    "depth": next_depth,
+                                    "reason": "page_link",
+                                    "source_url": result.get("final_url", result.get("url")),
+                                },
+                            )
                             frontier_push(
                                 to_visit,
                                 normalized_link,
@@ -2474,7 +2537,7 @@ async def crawl(
 
     persist_state(completed=True)
 
-    return {
+    crawl_result = {
         "start_url": url,
         "mode": mode,
         "crawl_strategy": crawl_strategy,
@@ -2513,6 +2576,8 @@ async def crawl(
         "pages_crawled": len(results),
         "results": results,
     }
+    await run_named_hook(hooks, "on_crawl_end", crawl_result)
+    return crawl_result
 
 
 async def screenshot(url: str, width: int = -1, height: int = -1, full_page: bool = True) -> bytes:

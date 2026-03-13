@@ -236,6 +236,8 @@ Crawl queue persistence is also opt-in. If you pass `state_path` in the SDK or `
 
 Autoscaled concurrency is available for long-running HTTP crawls. If you pass `autoscale_concurrency=True` in the SDK or `--autoscale-concurrency` in the CLI, the crawler will adapt batch concurrency between `min_concurrency` and `max_concurrency` based on sampled CPU and memory pressure and include autoscale snapshots in the result payload.
 
+SDK users can also pass lightweight lifecycle hooks into `fetch_page()` and `crawl()` using a `hooks` mapping. Supported crawl hook names are `on_crawl_start`, `on_enqueue`, `on_result`, `on_error`, and `on_crawl_end`. Fetch hooks support `on_request_start` and `on_request_end`.
+
 ## MCP Usage
 
 Run from the repo root:
