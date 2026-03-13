@@ -10,6 +10,7 @@ from crawl.sdk import fetch as sdk_fetch
 from crawl.sdk import fetch_page as sdk_fetch_page
 from crawl.sdk import batch_scrape as sdk_batch_scrape
 from crawl.sdk import extract as sdk_extract
+from crawl.sdk import forms as sdk_forms
 from crawl.sdk import map_site as sdk_map_site
 from crawl.sdk import query_page as sdk_query_page
 from crawl.sdk import scrape as sdk_scrape
@@ -308,6 +309,36 @@ async def extract(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+    )
+
+
+@mcp.tool()
+async def forms(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    include_fill_suggestions: bool = False,
+) -> dict:
+    """Run the SDK form extraction through the MCP transport."""
+    return await sdk_forms(
+        url=url,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        include_fill_suggestions=include_fill_suggestions,
     )
 
 

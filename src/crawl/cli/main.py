@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, map_site, query_page, scrape, screenshot, websearch
+from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -184,6 +184,18 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--header", action="append", dest="header_entries")
     extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     extract_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+
+    forms_parser = subparsers.add_parser("forms", help="Extract forms from a page.")
+    forms_parser.add_argument("url", help="Page URL.")
+    forms_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    forms_parser.add_argument("--cache", action="store_true", dest="cache")
+    forms_parser.add_argument("--cache-dir", dest="cache_dir")
+    forms_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    forms_parser.add_argument("--user-agent", dest="user_agent")
+    forms_parser.add_argument("--header", action="append", dest="header_entries")
+    forms_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    forms_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    forms_parser.add_argument("--fill-preview", action="store_true", dest="include_fill_suggestions")
 
     query_parser = subparsers.add_parser("query", help="Extract query-relevant content from a page.")
     query_parser.add_argument("url", help="Page URL.")
@@ -392,6 +404,20 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+        )
+
+    if args.command == "forms":
+        return await forms(
+            args.url,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+            include_fill_suggestions=args.include_fill_suggestions,
         )
 
     if args.command == "fetch-page":

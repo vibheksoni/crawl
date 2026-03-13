@@ -17,6 +17,7 @@ from .browser import browser_session, configure_page_request_settings
 from .cache import load_cached_page, save_cached_page
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .extract import extract_structured_data
+from .forms import extract_forms
 from .google import (
     extract_ai_overview,
     extract_organic_results,
@@ -554,6 +555,7 @@ def build_page_result(
     fallback_used: bool = False,
     cache_hit: bool = False,
     signature: str | None = None,
+    forms: list[dict] | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -592,6 +594,9 @@ def build_page_result(
         "signature": signature,
     }
 
+    if forms is not None:
+        result["forms"] = forms
+
     if include_headers:
         result["headers"] = page_data["headers"]
     if include_html:
@@ -622,6 +627,8 @@ async def _fetch_page(
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
     full_resources: bool = False,
+    include_forms: bool = False,
+    include_form_fill_suggestions: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -647,6 +654,8 @@ async def _fetch_page(
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
         full_resources: Whether to include resource URLs in discovery.
+        include_forms: Whether to extract forms.
+        include_form_fill_suggestions: Whether to include form fill previews.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -754,6 +763,15 @@ async def _fetch_page(
             full_resources=full_resources,
         )
         signature = compute_page_signature(page_data["html"])
+        forms = (
+            extract_forms(
+                page_data["html"],
+                page_data["final_url"],
+                include_fill_suggestions=include_form_fill_suggestions,
+            )
+            if include_forms
+            else None
+        )
     else:
         page_meta = {
             "title": "",
@@ -771,6 +789,7 @@ async def _fetch_page(
             "resources": [],
         }
         signature = None
+        forms = [] if include_forms else None
 
     result = build_page_result(
         page_data,
@@ -782,6 +801,7 @@ async def _fetch_page(
         fallback_used=fallback_used,
         cache_hit=cache_hit,
         signature=signature,
+        forms=forms,
     )
     return result, page_meta["links"]
 
@@ -805,6 +825,8 @@ async def fetch_page(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     full_resources: bool = False,
+    include_forms: bool = False,
+    include_form_fill_suggestions: bool = False,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -827,6 +849,8 @@ async def fetch_page(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         full_resources: Whether to include resource URLs in discovery.
+        include_forms: Whether to extract forms.
+        include_form_fill_suggestions: Whether to include form fill previews.
 
     Returns:
         Structured page details and discovered links.
@@ -850,6 +874,8 @@ async def fetch_page(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
         full_resources=full_resources,
+        include_forms=include_forms,
+        include_form_fill_suggestions=include_form_fill_suggestions,
     )
     return result
 
@@ -1243,6 +1269,60 @@ async def extract(
         "metadata": page.get("metadata", {}),
         "schema": schema,
         "data": extract_structured_data(page["html"], page["final_url"], schema),
+    }
+
+
+async def forms(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    include_fill_suggestions: bool = False,
+) -> dict:
+    """Extract forms from a page.
+
+    Args:
+        url: URL to inspect.
+        mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        include_fill_suggestions: Whether to include form fill previews.
+
+    Returns:
+        Form extraction payload.
+    """
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_html=False,
+        include_forms=True,
+        include_form_fill_suggestions=include_fill_suggestions,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
+    return {
+        "url": page["final_url"],
+        "metadata": page.get("metadata", {}),
+        "forms": page.get("forms", []),
+        "count": len(page.get("forms", [])),
     }
 
 
