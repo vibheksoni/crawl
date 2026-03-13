@@ -2,15 +2,17 @@
 
 from typing import Literal
 
+from .chunking import rank_text_chunks
 from .page import extract_links_from_html, render_clean_html, render_page_content
 
-ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata"]
+ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown"]
 
 
 def build_scrape_result(
     page_result: dict,
     formats: list[ScrapeFormat] | None = None,
     only_main_content: bool = True,
+    query: str | None = None,
 ) -> dict:
     """Build a multi-format scrape payload from a structured page result.
 
@@ -18,6 +20,7 @@ def build_scrape_result(
         page_result: Structured page result from ``fetch_page``.
         formats: Requested output formats.
         only_main_content: Whether to prefer main content.
+        query: Optional query for relevant chunk extraction.
 
     Returns:
         Scrape payload with the requested formats.
@@ -53,5 +56,14 @@ def build_scrape_result(
         )
     if "metadata" in requested_formats:
         result["metadata"] = page_result.get("metadata", {})
+    if "fit_markdown" in requested_formats:
+        markdown = render_page_content(
+            html,
+            output_format="markdown",
+            only_main_content=only_main_content,
+        )
+        ranked = rank_text_chunks(markdown, query or "", strategy="sliding", chunk_size=120, overlap=30, top_k=5)
+        result["fit_markdown"] = "\n\n---\n\n".join(item["text"] for item in ranked)
+        result["fit_chunks"] = ranked
 
     return result

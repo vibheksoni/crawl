@@ -907,6 +907,7 @@ async def scrape(
     url: str,
     formats: list[ScrapeFormat] | None = None,
     only_main_content: bool = True,
+    query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
     cache: bool = False,
     cache_dir: str | None = None,
@@ -924,6 +925,7 @@ async def scrape(
         url: URL to scrape.
         formats: Requested scrape formats.
         only_main_content: Whether to prefer main content.
+        query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
@@ -953,13 +955,19 @@ async def scrape(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
     )
-    return build_scrape_result(page, formats=formats, only_main_content=only_main_content)
+    return build_scrape_result(
+        page,
+        formats=formats,
+        only_main_content=only_main_content,
+        query=query,
+    )
 
 
 async def batch_scrape(
     urls: list[str],
     formats: list[ScrapeFormat] | None = None,
     only_main_content: bool = True,
+    query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
     max_concurrency: int = 4,
     cache: bool = False,
@@ -978,6 +986,7 @@ async def batch_scrape(
         urls: URL list to scrape.
         formats: Requested scrape formats.
         only_main_content: Whether to prefer main content.
+        query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
         max_concurrency: Maximum concurrent scrape tasks.
         cache: Whether to use disk caching.
@@ -1002,6 +1011,7 @@ async def batch_scrape(
                     url=target_url,
                     formats=formats,
                     only_main_content=only_main_content,
+                    query=query,
                     mode=mode,
                     cache=cache,
                     cache_dir=cache_dir,
@@ -1029,6 +1039,54 @@ async def batch_scrape(
         "failed": sum(1 for item in results if "error" in item),
         "data": results,
     }
+
+
+async def query_page(
+    url: str,
+    query: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+) -> dict:
+    """Extract query-relevant content from a page.
+
+    Args:
+        url: URL to query.
+        query: Relevance query.
+        mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+
+    Returns:
+        Query-focused page payload.
+    """
+    return await scrape(
+        url=url,
+        formats=["fit_markdown", "metadata"],
+        only_main_content=True,
+        query=query,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+    )
 
 
 async def map_site(
