@@ -294,6 +294,89 @@ def extract_next_data_chunks(script_text: str) -> list[dict]:
     return entries
 
 
+def append_text_lines(
+    value: Any,
+    lines: list[str],
+    prefix: str = "",
+    depth: int = 0,
+    max_lines: int = 400,
+) -> None:
+    """Flatten a nested JSON-like value into text lines.
+
+    Args:
+        value: Nested value to flatten.
+        lines: Mutable output line list.
+        prefix: Current value path prefix.
+        depth: Current recursion depth.
+        max_lines: Maximum lines to collect.
+    """
+    if len(lines) >= max_lines or depth > 6:
+        return
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            next_prefix = f"{prefix}.{key}" if prefix else str(key)
+            append_text_lines(item, lines, prefix=next_prefix, depth=depth + 1, max_lines=max_lines)
+            if len(lines) >= max_lines:
+                return
+        return
+
+    if isinstance(value, list):
+        for index, item in enumerate(value[:20]):
+            next_prefix = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            append_text_lines(item, lines, prefix=next_prefix, depth=depth + 1, max_lines=max_lines)
+            if len(lines) >= max_lines:
+                return
+        return
+
+    normalized = str(value).strip()
+    if not normalized:
+        return
+    if prefix:
+        lines.append(f"{prefix}: {normalized}")
+    else:
+        lines.append(normalized)
+
+
+def render_app_state_text(app_state: dict, max_lines: int = 400, max_chars: int = 16000) -> str:
+    """Render extracted app-state payloads into searchable text.
+
+    Args:
+        app_state: Embedded app-state payload map.
+        max_lines: Maximum text lines to emit.
+        max_chars: Maximum character count to return.
+
+    Returns:
+        Searchable flattened text.
+    """
+    lines: list[str] = []
+
+    for index, item in enumerate(app_state.get("json_ld", [])):
+        append_text_lines(item, lines, prefix=f"json_ld[{index}]", max_lines=max_lines)
+        if len(lines) >= max_lines:
+            break
+
+    for entry in app_state.get("states", []):
+        name = entry.get("name") or entry.get("kind", "state")
+        if entry.get("parsed"):
+            append_text_lines(entry.get("value"), lines, prefix=name, max_lines=max_lines)
+        elif entry.get("raw_preview"):
+            lines.append(f"{name}: {entry['raw_preview']}")
+        if len(lines) >= max_lines:
+            break
+
+    for index, entry in enumerate(app_state.get("next_data", [])):
+        prefix = f"next_data[{index}]"
+        if entry.get("parsed"):
+            append_text_lines(entry.get("value"), lines, prefix=prefix, max_lines=max_lines)
+        elif entry.get("raw_preview"):
+            lines.append(f"{prefix}: {entry['raw_preview']}")
+        if len(lines) >= max_lines:
+            break
+
+    return "\n".join(lines)[:max_chars].rstrip()
+
+
 def detect_frameworks(state_entries: list[dict], next_data_entries: list[dict]) -> list[str]:
     """Infer likely frameworks from embedded state names.
 

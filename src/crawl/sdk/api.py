@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
-from .app_state import extract_app_state
+from .app_state import extract_app_state, render_app_state_text
 from .browser import (
     browser_session,
     collect_request_capture,
@@ -23,6 +23,7 @@ from .browser import (
     perform_basic_interactions,
 )
 from .cache import load_cached_page, save_cached_page
+from .chunking import rank_text_chunks
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .extract import extract_structured_data
 from .forms import extract_forms
@@ -1394,12 +1395,11 @@ async def query_page(
     Returns:
         Query-focused page payload.
     """
-    return await scrape(
+    page = await fetch_page(
         url=url,
-        formats=["fit_markdown", "metadata"],
-        only_main_content=True,
-        query=query,
         mode=mode,
+        include_html=True,
+        include_app_state=True,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -1409,6 +1409,33 @@ async def query_page(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
     )
+    result = build_scrape_result(
+        page,
+        formats=["fit_markdown", "metadata"],
+        only_main_content=True,
+        query=query,
+    )
+
+    app_state = page.get("app_state", {})
+    result["app_state_summary"] = app_state.get("summary", {})
+
+    app_state_text = render_app_state_text(app_state)
+    if not app_state_text:
+        result["app_state_fit_chunks"] = []
+        result["app_state_fit_text"] = ""
+        return result
+
+    app_state_fit_chunks = rank_text_chunks(
+        app_state_text,
+        query,
+        strategy="sliding",
+        chunk_size=120,
+        overlap=30,
+        top_k=5,
+    )
+    result["app_state_fit_chunks"] = app_state_fit_chunks
+    result["app_state_fit_text"] = "\n\n---\n\n".join(item["text"] for item in app_state_fit_chunks)
+    return result
 
 
 async def map_site(
