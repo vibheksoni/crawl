@@ -21,6 +21,7 @@ from crawl.sdk import scrape as sdk_scrape
 from crawl.sdk import screenshot as sdk_screenshot
 from crawl.sdk import search_technology_definitions as sdk_search_technology_definitions
 from crawl.sdk import tech as sdk_tech
+from crawl.sdk import tech_grep as sdk_tech_grep
 from crawl.sdk import update_technology_definitions as sdk_update_technology_definitions
 from crawl.sdk import websearch as sdk_websearch
 
@@ -521,6 +522,44 @@ async def tech_info(name: str) -> dict:
 async def tech_update() -> str:
     """Refresh the bundled technology definitions file."""
     return sdk_update_technology_definitions()
+
+
+@mcp.tool()
+async def tech_grep(
+    url: str,
+    text: str | None = None,
+    regex: str | None = None,
+    search: str = "body",
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Run an ad-hoc signal grep through the SDK transport."""
+    return await sdk_tech_grep(
+        url=url,
+        text=text,
+        regex=regex,
+        search=search,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
 
 
 @mcp.tool()

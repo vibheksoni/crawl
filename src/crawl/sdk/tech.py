@@ -307,6 +307,33 @@ def build_page_features(url: str, html: str, headers: dict[str, str] | None = No
     }
 
 
+def resolve_search_contexts(url: str, html: str, headers: dict[str, str] | None = None) -> dict[str, list[str]]:
+    """Build grep/search contexts from page signals.
+
+    Args:
+        url: Page URL.
+        html: Raw page HTML.
+        headers: Response headers.
+
+    Returns:
+        Context name to values mapping.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    contexts = {
+        "body": [html],
+        "all": ["\n".join([*(f"{k}: {v}" for k, v in (headers or {}).items()), html])],
+        "url": [url],
+        "headers": [f"{k}: {v}" for k, v in (headers or {}).items()],
+        "script": [(script.get("src") or script.get_text(" ", strip=True) or "").strip() for script in soup.find_all("script")],
+    }
+    meta_map = extract_meta_map(soup)
+    for key, values in meta_map.items():
+        contexts[f"meta[{key}]"] = values
+    for key, value in (headers or {}).items():
+        contexts[f"headers[{key.lower()}]"] = [str(value)]
+    return contexts
+
+
 def apply_rules_to_values(values: list[str], rules: list[dict], matched_on: str) -> list[dict]:
     """Apply compiled rules to a list of values.
 
@@ -535,4 +562,54 @@ def fingerprint_page(
         "aggression": aggression,
         "technologies": technologies,
         "page_features": build_page_features(url, html, headers=headers),
+    }
+
+
+def grep_page(
+    url: str,
+    html: str,
+    headers: dict[str, str] | None = None,
+    text: str | None = None,
+    regex: str | None = None,
+    search: str = "body",
+) -> dict:
+    """Search a page context for a literal string or regex.
+
+    Args:
+        url: Page URL.
+        html: Raw page HTML.
+        headers: Response headers.
+        text: Optional case-insensitive literal match.
+        regex: Optional regex pattern.
+        search: Search context.
+
+    Returns:
+        Grep result payload.
+    """
+    contexts = resolve_search_contexts(url, html, headers=headers)
+    values = [value for value in contexts.get(search, []) if value]
+    matches = []
+
+    if text:
+        lowered = text.lower()
+        matches.extend(value for value in values if lowered in value.lower())
+
+    if regex:
+        compiled = re.compile(regex, re.IGNORECASE)
+        matches.extend(value for value in values if compiled.search(value))
+
+    deduped = []
+    seen = set()
+    for value in matches:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+
+    return {
+        "url": url,
+        "search": search,
+        "matched": bool(deduped),
+        "count": len(deduped),
+        "matches": deduped,
     }

@@ -56,7 +56,7 @@ from .page import (
 )
 from .proxy import normalize_proxy_urls, pick_proxy
 from .scrape import ScrapeFormat, build_scrape_result
-from .tech import fingerprint_page
+from .tech import fingerprint_page, grep_page
 from .searxng import search_searxng
 
 
@@ -1606,6 +1606,71 @@ async def tech(
         "results": results,
         "crawl": crawl_result,
     }
+
+
+async def tech_grep(
+    url: str,
+    text: str | None = None,
+    regex: str | None = None,
+    search: str = "body",
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Search page signals with an ad-hoc literal or regex match.
+
+    Args:
+        url: Page URL.
+        text: Optional case-insensitive literal.
+        regex: Optional regex pattern.
+        search: Search context.
+        mode: Fetch mode.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+
+    Returns:
+        Grep result payload.
+    """
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_html=True,
+        include_headers=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+    return grep_page(
+        page["final_url"],
+        page["html"],
+        headers=page.get("headers"),
+        text=text,
+        regex=regex,
+        search=search,
+    )
 
 
 async def batch_scrape(

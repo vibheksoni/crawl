@@ -209,6 +209,7 @@ python cli.py extract https://www.python.org/events/python-events/ --schema-file
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
 python cli.py contacts https://www.python.org --cache
 python cli.py tech https://nextjs.org --mode http --aggression 1
+python cli.py tech-grep https://nextjs.org --text next.js --search headers[x-powered-by]
 python cli.py tech-list --search next --limit 10
 python cli.py tech-info Next.js
 python cli.py tech-update
@@ -252,6 +253,8 @@ SDK users can also pass lightweight lifecycle hooks into `fetch_page()` and `cra
 
 Technology fingerprinting supports lightweight aggression levels inspired by classic web scanners. Level `1` uses cheap passive contexts such as headers, cookies, meta tags, and URLs. Level `2` adds script source matching. Level `3` enables full HTML body pattern matching. The bundled definitions file can be refreshed with `tech-update`.
 
+If the `tech` command receives a bare hostname instead of a full URL, it will try both `https://` and `http://` variants automatically. `tech-grep` provides ad-hoc text or regex matching against contexts such as `body`, `all`, `url`, `headers`, `headers[name]`, `meta[name]`, and `script`.
+
 ## MCP Usage
 
 Run from the repo root:
@@ -276,6 +279,7 @@ crawl-mcp
 - `forms`: extracts forms and can generate safe fill previews
 - `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `tech`: fingerprints technologies, versions, categories, implied stacks, and generic page signals from a page or small site slice
+- `tech_grep`: performs ad-hoc literal or regex matching across page signal contexts for scanner-style custom checks
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
 - `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
 - `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results

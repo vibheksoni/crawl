@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, update_technology_definitions, websearch
+from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -296,6 +296,23 @@ def build_parser() -> argparse.ArgumentParser:
     tech_update_parser = subparsers.add_parser("tech-update", help="Refresh the technology definitions file.")
     tech_update_parser.add_argument("--tech-file", dest="tech_file")
 
+    tech_grep_parser = subparsers.add_parser("tech-grep", help="Search page signals with a literal string or regex.")
+    tech_grep_parser.add_argument("url", help="Page URL.")
+    tech_grep_parser.add_argument("--text", dest="text")
+    tech_grep_parser.add_argument("--regex", dest="regex")
+    tech_grep_parser.add_argument("--search", default="body", dest="search")
+    tech_grep_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    tech_grep_parser.add_argument("--cache", action="store_true", dest="cache")
+    tech_grep_parser.add_argument("--cache-dir", dest="cache_dir")
+    tech_grep_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    tech_grep_parser.add_argument("--user-agent", dest="user_agent")
+    tech_grep_parser.add_argument("--header", action="append", dest="header_entries")
+    tech_grep_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    tech_grep_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    tech_grep_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    tech_grep_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    add_common_output_options(tech_grep_parser)
+
     research_parser = subparsers.add_parser("research", help="Run a multi-source research workflow over search results.")
     research_parser.add_argument("query", help="Research query.")
     research_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
@@ -536,6 +553,24 @@ async def run_command(args: argparse.Namespace):
 
     if args.command == "tech-update":
         return update_technology_definitions(args.tech_file)
+
+    if args.command == "tech-grep":
+        return await tech_grep(
+            args.url,
+            text=args.text,
+            regex=args.regex,
+            search=args.search,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+        )
 
     if args.command == "research":
         return await research(
