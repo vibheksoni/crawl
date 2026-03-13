@@ -51,7 +51,7 @@ python -m pip install -r requirements.txt
 ```python
 import asyncio
 
-from crawl.sdk import batch_scrape, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, websearch
+from crawl.sdk import batch_scrape, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, websearch
 
 
 async def main() -> None:
@@ -106,12 +106,17 @@ async def main() -> None:
         include_fill_suggestions=True,
         cache=True,
     )
+    contact_data = await contacts(
+        "https://www.python.org",
+        cache=True,
+    )
     page = await fetch_page(
         "https://httpbin.org/headers",
         mode="http",
         include_headers=True,
         include_html=True,
         include_app_state=True,
+        include_contacts=True,
         pattern_mode="glob",
         full_resources=True,
         user_agent="crawl-sdk-demo/1.0",
@@ -160,6 +165,7 @@ async def main() -> None:
     print(extracted["data"][0]["title"])
     print(page_query["fit_chunks"][0]["score"])
     print(form_data["count"])
+    print(contact_data["contacts"]["social_count"])
     print(page["cache_hit"])
     print(page["signature"])
     print(len(browser_page["requests"]))
@@ -185,9 +191,10 @@ python cli.py batch-scrape https://example.com https://www.python.org --format m
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --limit 5 --include-pattern tutorial --max-retries 2 --retry-backoff-ms 250
 python cli.py extract https://www.python.org/events/python-events/ --schema-file _ignore\\extract-schema.json --cache
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
+python cli.py contacts https://www.python.org --cache
 python cli.py query https://www.python.org "data science" --cache
 python cli.py fetch https://example.com --format text --mode auto --cache --cache-dir .crawl_cache
-python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250 --include-app-state
+python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250 --include-app-state --include-contacts
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
@@ -230,13 +237,14 @@ crawl-mcp
 ## Current Capabilities
 
 - `websearch`: supports Google browser scraping, SearXNG, automatic provider fallback, hybrid merged search, optional proxy routing, and optional scraped content attachment for top results
-- `scrape`: returns one or more content formats from a single page, including markdown, text, cleaned HTML, links, metadata, and embedded app-state payloads
+- `scrape`: returns one or more content formats from a single page, including markdown, text, cleaned HTML, links, metadata, embedded app-state payloads, and contact/social enrichment
 - `batch_scrape`: scrapes multiple URLs concurrently with one normalized result envelope
 - `map_site`: discovers URLs within a site and can rank them by relevance to a search phrase
 - `extract`: performs selector-based structured extraction using reusable schemas
 - `forms`: extracts forms and can generate safe fill previews
+- `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
-- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
+- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs

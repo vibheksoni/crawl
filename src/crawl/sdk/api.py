@@ -24,6 +24,7 @@ from .browser import (
 )
 from .cache import load_cached_page, save_cached_page
 from .chunking import rank_text_chunks
+from .contacts import extract_contacts_from_html
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .crawl_state import load_crawl_state, save_crawl_state, serialize_frontier
 from .extract import extract_structured_data
@@ -786,6 +787,7 @@ def build_page_result(
     requests: list[dict] | None = None,
     interactions: list[str] | None = None,
     app_state: dict | None = None,
+    contacts: dict | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -798,6 +800,7 @@ def build_page_result(
         source: Source used to fetch the page.
         fallback_used: Whether browser fallback was used after HTTP.
         app_state: Optional embedded hydration and structured payloads.
+        contacts: Optional extracted contact and social details.
 
     Returns:
         Normalized page result payload.
@@ -833,6 +836,8 @@ def build_page_result(
         result["interactions"] = interactions
     if app_state is not None:
         result["app_state"] = app_state
+    if contacts is not None:
+        result["contacts"] = contacts
 
     if include_headers:
         result["headers"] = page_data["headers"]
@@ -874,6 +879,7 @@ async def _fetch_page(
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
     include_app_state: bool = False,
+    include_contacts: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -909,6 +915,7 @@ async def _fetch_page(
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
         include_app_state: Whether to extract embedded hydration payloads.
+        include_contacts: Whether to extract contact and social details.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -1044,6 +1051,7 @@ async def _fetch_page(
             else None
         )
         app_state = extract_app_state(page_data["html"]) if include_app_state else None
+        contacts = extract_contacts_from_html(page_data["html"], page_data["final_url"]) if include_contacts else None
     else:
         page_meta = {
             "title": "",
@@ -1063,6 +1071,7 @@ async def _fetch_page(
         signature = None
         forms = [] if include_forms else None
         app_state = None
+        contacts = None
 
     result = build_page_result(
         page_data,
@@ -1078,6 +1087,7 @@ async def _fetch_page(
         requests=page_data.get("requests") if include_requests else None,
         interactions=page_data.get("interactions") or None,
         app_state=app_state,
+        contacts=contacts,
     )
     return result, page_meta["links"]
 
@@ -1111,6 +1121,7 @@ async def fetch_page(
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
     include_app_state: bool = False,
+    include_contacts: bool = False,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -1143,6 +1154,7 @@ async def fetch_page(
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
         include_app_state: Whether to extract embedded hydration payloads.
+        include_contacts: Whether to extract contact and social details.
 
     Returns:
         Structured page details and discovered links.
@@ -1176,6 +1188,7 @@ async def fetch_page(
         retry_backoff_ms=retry_backoff_ms,
         retry_status_codes=retry_status_codes,
         include_app_state=include_app_state,
+        include_contacts=include_contacts,
     )
     return result
 
@@ -1285,6 +1298,7 @@ async def scrape(
         include_html=True,
         include_headers=True,
         include_app_state=bool(formats and "app_state" in formats),
+        include_contacts=bool(formats and "contacts" in formats),
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -1303,6 +1317,61 @@ async def scrape(
         only_main_content=only_main_content,
         query=query,
     )
+
+
+async def contacts(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Extract contact and social details from a page.
+
+    Args:
+        url: URL to inspect.
+        mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+
+    Returns:
+        Contact extraction payload.
+    """
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_contacts=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+    return {
+        "url": page["final_url"],
+        "metadata": page.get("metadata", {}),
+        "contacts": page.get("contacts", {}),
+    }
 
 
 async def batch_scrape(

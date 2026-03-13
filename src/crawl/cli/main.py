@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
+from crawl.sdk import batch_scrape, benchmark_fast_crawl, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -101,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
     search_parser.add_argument(
         "--scrape-format",
-        choices=["markdown", "text", "html", "links", "metadata", "app_state"],
+        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts"],
         action="append",
         dest="scrape_formats",
     )
@@ -137,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("url", help="Page URL.")
     scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"],
         action="append",
         dest="formats",
     )
@@ -160,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
     batch_scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts"],
         action="append",
         dest="formats",
     )
@@ -235,6 +235,20 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(forms_parser)
 
+    contacts_parser = subparsers.add_parser("contacts", help="Extract contact details and social links from a page.")
+    contacts_parser.add_argument("url", help="Page URL.")
+    contacts_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    contacts_parser.add_argument("--cache", action="store_true", dest="cache")
+    contacts_parser.add_argument("--cache-dir", dest="cache_dir")
+    contacts_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    contacts_parser.add_argument("--user-agent", dest="user_agent")
+    contacts_parser.add_argument("--header", action="append", dest="header_entries")
+    contacts_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    contacts_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    contacts_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    contacts_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    add_common_output_options(contacts_parser)
+
     query_parser = subparsers.add_parser("query", help="Extract query-relevant content from a page.")
     query_parser.add_argument("url", help="Page URL.")
     query_parser.add_argument("query", help="Relevance query.")
@@ -268,6 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--include-app-state", action="store_true", dest="include_app_state")
+    fetch_page_parser.add_argument("--include-contacts", action="store_true", dest="include_contacts")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -499,6 +514,21 @@ async def run_command(args: argparse.Namespace):
             retry_backoff_ms=args.retry_backoff_ms,
         )
 
+    if args.command == "contacts":
+        return await contacts(
+            args.url,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+        )
+
     if args.command == "fetch-page":
         return await fetch_page(
             args.url,
@@ -518,6 +548,7 @@ async def run_command(args: argparse.Namespace):
             include_headers=args.include_headers,
             include_html=args.include_html,
             include_app_state=args.include_app_state,
+            include_contacts=args.include_contacts,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
