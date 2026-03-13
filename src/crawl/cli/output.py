@@ -58,12 +58,32 @@ def render_template(data, template: str) -> str:
     Returns:
         Rendered string.
     """
+    rendered, _ = render_template_details(data, template)
+    return rendered
+
+
+def render_template_details(data, template: str) -> tuple[str, int]:
+    """Render a template and return how many fields resolved.
+
+    Args:
+        data: Source data.
+        template: Template string.
+
+    Returns:
+        Tuple of rendered string and resolved field count.
+    """
+    resolved_count = 0
+
     def replace(match: re.Match) -> str:
+        nonlocal resolved_count
         field_path = match.group(1).strip()
         value = get_field_value(data, field_path)
-        return "" if value is None else str(value)
+        if value is None:
+            return ""
+        resolved_count += 1
+        return str(value)
 
-    return TEMPLATE_PATTERN.sub(replace, template)
+    return TEMPLATE_PATTERN.sub(replace, template), resolved_count
 
 
 def normalize_output_rows(result) -> list[dict]:

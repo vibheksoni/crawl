@@ -192,6 +192,7 @@ python cli.py fetch-page https://httpbin.org/headers --mode http --include-html 
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-strategy best_first --crawl-query docs --allow-domain docs.python.org --budget "*=5" --budget "/3/tutorial/=3" --delay-ms 500 --path-delay "/3/tutorial/=1000" --auto-throttle --minimum-delay-ms 200 --maximum-delay-ms 1000 --seed-sitemap --full-resources --dedupe-by-signature --include-requests --interaction-mode auto --session-dir .\\browser-session --respect-robots-txt --cache
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
+python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{total}}"
 python cli.py batch-scrape https://example.com https://www.python.org --format metadata --jsonl --field url --field metadata.title --store-field url
 python cli.py screenshot https://example.com --output example.jpg
 python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8

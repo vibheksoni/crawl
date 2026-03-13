@@ -3,9 +3,10 @@
 import argparse
 import asyncio
 import json
+import re
 from pathlib import Path
 
-from crawl.cli.output import normalize_output_rows, render_template, select_fields, store_selected_fields
+from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
 from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
 
 
@@ -615,8 +616,22 @@ def main() -> int:
         store_selected_fields(result, args.store_fields, store_dir=args.store_dir)
 
     if args.output_template:
-        rows = normalize_output_rows(result)
-        rendered = "\n".join(render_template(row, args.output_template) for row in rows)
+        template_fields = len(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", args.output_template))
+        if isinstance(result, dict):
+            rendered_result, resolved_fields = render_template_details(result, args.output_template)
+        else:
+            rendered_result, resolved_fields = "", 0
+
+        if template_fields > 0 and resolved_fields == template_fields:
+            rendered = rendered_result
+        else:
+            rows = normalize_output_rows(result)
+            rendered_rows = []
+            for row in rows:
+                rendered_row, row_resolved_fields = render_template_details(row, args.output_template)
+                if row_resolved_fields > 0:
+                    rendered_rows.append(rendered_row)
+            rendered = "\n".join(rendered_rows)
         if args.output_file:
             Path(args.output_file).write_text(rendered, encoding="utf-8")
         print(rendered)
