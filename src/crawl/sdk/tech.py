@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from functools import lru_cache
@@ -12,8 +13,10 @@ from curl_cffi.requests import Session
 
 
 DEFAULT_TECH_FILE = Path(__file__).resolve().parent / "data" / "technologies.json"
+DEFAULT_PLUGIN_FILE = Path(__file__).resolve().parent / "data" / "plugin_signatures.json"
 TECHNOLOGY_PART_FILES = ["_"] + [chr(code) for code in range(ord("a"), ord("z") + 1)]
 TECHNOLOGY_SOURCE_ROOT = "https://raw.githubusercontent.com/enthec/webappanalyzer/main/src"
+EXTRACTED_ATTRIBUTE_KEYS = ("account", "firmware", "filepath", "model", "module", "os", "string")
 
 
 def load_technology_definitions(tech_file: str | None = None) -> dict:
@@ -26,6 +29,21 @@ def load_technology_definitions(tech_file: str | None = None) -> dict:
         Parsed technology definition payload.
     """
     path = Path(tech_file or DEFAULT_TECH_FILE).resolve()
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_plugin_signatures(plugin_file: str | None = None) -> dict:
+    """Load imported plugin signatures from disk.
+
+    Args:
+        plugin_file: Optional plugin signature file path.
+
+    Returns:
+        Parsed plugin signature payload.
+    """
+    path = Path(plugin_file or DEFAULT_PLUGIN_FILE).resolve()
+    if not path.exists():
+        return {"count": 0, "plugins": []}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -218,6 +236,19 @@ def get_cached_technology_catalog(tech_file: str | None = None) -> dict:
     return normalize_technology_catalog(load_technology_definitions(tech_file))
 
 
+@lru_cache(maxsize=4)
+def get_cached_plugin_signatures(plugin_file: str | None = None) -> dict:
+    """Load and cache imported plugin signatures.
+
+    Args:
+        plugin_file: Optional plugin signature file path.
+
+    Returns:
+        Cached plugin signature payload.
+    """
+    return load_plugin_signatures(plugin_file)
+
+
 def extract_cookie_map(headers: dict[str, str] | None = None) -> dict[str, str]:
     """Extract cookie names and values from response headers.
 
@@ -307,6 +338,21 @@ def build_page_features(url: str, html: str, headers: dict[str, str] | None = No
     }
 
 
+def build_tag_pattern(soup: BeautifulSoup) -> str:
+    """Build a simple WhatWeb-style HTML tag pattern string.
+
+    Args:
+        soup: Parsed page HTML.
+
+    Returns:
+        Comma-delimited tag pattern.
+    """
+    parts = []
+    for node in soup.find_all(True):
+        parts.append(node.name)
+    return ",".join(parts)
+
+
 def resolve_search_contexts(url: str, html: str, headers: dict[str, str] | None = None) -> dict[str, list[str]]:
     """Build grep/search contexts from page signals.
 
@@ -319,12 +365,15 @@ def resolve_search_contexts(url: str, html: str, headers: dict[str, str] | None 
         Context name to values mapping.
     """
     soup = BeautifulSoup(html, "html.parser")
+    body_md5 = hashlib.md5(html.encode("utf-8", errors="ignore")).hexdigest()
     contexts = {
         "body": [html],
         "all": ["\n".join([*(f"{k}: {v}" for k, v in (headers or {}).items()), html])],
         "url": [url],
         "headers": [f"{k}: {v}" for k, v in (headers or {}).items()],
         "script": [(script.get("src") or script.get_text(" ", strip=True) or "").strip() for script in soup.find_all("script")],
+        "tagpattern": [build_tag_pattern(soup)],
+        "md5": [body_md5],
     }
     meta_map = extract_meta_map(soup)
     for key, values in meta_map.items():
@@ -453,6 +502,7 @@ def search_technology_definitions(
         Matching technology records.
     """
     catalog = get_cached_technology_catalog(tech_file)
+    plugin_payload = get_cached_plugin_signatures()
     needle = (search or "").strip().lower()
     results = []
     for definition in catalog["technologies"].values():
@@ -465,10 +515,169 @@ def search_technology_definitions(
                 "categories": definition["categories"],
                 "website": definition["website"],
                 "implies": definition["implies"],
+                "source": "definitions",
             }
         )
-    results.sort(key=lambda item: item["name"].lower())
-    return results[: max(1, limit)]
+    for plugin in plugin_payload.get("plugins", []):
+        haystack = " ".join([plugin["name"], plugin.get("website", ""), plugin.get("description", "")]).lower()
+        if needle and needle not in haystack:
+            continue
+        results.append(
+            {
+                "name": plugin["name"],
+                "categories": ["Imported Signatures"],
+                "website": plugin.get("website", ""),
+                "implies": [],
+                "source": "signature_plugins",
+                "disabled": bool(plugin.get("disabled")),
+            }
+        )
+    merged = {}
+    for item in results:
+        existing = merged.get(item["name"])
+        if existing is None:
+            merged[item["name"]] = item
+            continue
+        existing_sources = set(str(existing.get("source", "")).split(","))
+        existing_sources.add(item.get("source", ""))
+        existing["source"] = ",".join(sorted(source for source in existing_sources if source))
+        existing["disabled"] = bool(existing.get("disabled")) and bool(item.get("disabled"))
+    deduped = sorted(merged.values(), key=lambda item: item["name"].lower())
+    return deduped[: max(1, limit)]
+
+
+def match_plugin_rule(rule: dict, contexts: dict[str, list[str]], url: str, status_code: int | None = None) -> dict | None:
+    """Match one imported plugin rule against prepared contexts.
+
+    Args:
+        rule: Imported plugin rule.
+        contexts: Prepared search contexts.
+        url: Page URL.
+        status_code: Optional HTTP status code.
+
+    Returns:
+        Match payload or ``None``.
+    """
+    if rule.get("status") is not None and status_code != rule["status"]:
+        return None
+    if rule.get("url"):
+        expected = rule["url"]
+        if expected not in url:
+            return None
+
+    if rule.get("md5"):
+        values = contexts.get("md5", [])
+        if rule["md5"] not in values:
+            return None
+        return {
+            "matched_on": "md5",
+            "confidence": rule.get("certainty", 100),
+            "version": "",
+            "attributes": {},
+        }
+
+    if rule.get("tagpattern"):
+        values = contexts.get("tagpattern", [])
+        if rule["tagpattern"] not in values:
+            return None
+        return {
+            "matched_on": "tagpattern",
+            "confidence": rule.get("certainty", 100),
+            "version": "",
+            "attributes": {},
+        }
+
+    values = [value for value in contexts.get(rule.get("context", "body"), []) if value]
+    regex = get_compiled_regex(rule["pattern"])
+    if regex is None:
+        return None
+
+    for value in values:
+        match = regex.search(value)
+        if not match:
+            continue
+        attributes = {}
+        for key, attribute in rule.get("attributes", {}).items():
+            attribute_regex = get_compiled_regex(attribute["pattern"])
+            if attribute_regex is None:
+                continue
+            attribute_match = attribute_regex.search(value)
+            if not attribute_match:
+                continue
+            rendered = render_version(attribute_match, attribute.get("template", ""))
+            attributes[key] = rendered if rendered else attribute_match.group(0)
+        return {
+            "matched_on": rule.get("context", "body"),
+            "confidence": rule.get("certainty", 100),
+            "version": render_version(match, rule.get("version_template", "")),
+            "attributes": attributes,
+            "name": rule.get("name", ""),
+        }
+    return None
+
+
+def fingerprint_imported_plugins(
+    url: str,
+    html: str,
+    headers: dict[str, str] | None = None,
+    plugin_file: str | None = None,
+    aggression: int = 1,
+    status_code: int | None = None,
+) -> list[dict]:
+    """Fingerprint imported plugin signatures against a page.
+
+    Args:
+        url: Page URL.
+        html: Raw page HTML.
+        headers: Response headers.
+        plugin_file: Optional plugin signature file path.
+        aggression: Matching aggression level.
+        status_code: Optional HTTP status code.
+
+    Returns:
+        Matched plugin payloads.
+    """
+    contexts = resolve_search_contexts(url, html, headers=headers)
+    payload = get_cached_plugin_signatures(plugin_file)
+    matches = []
+
+    for plugin in payload.get("plugins", []):
+        evidence = []
+        for rule in plugin.get("rules", []):
+            if aggression <= 1 and rule.get("url"):
+                continue
+            matched = match_plugin_rule(rule, contexts, url=url, status_code=status_code)
+            if matched is not None:
+                evidence.append(matched)
+        if not evidence:
+            continue
+
+        versions = sorted({item["version"] for item in evidence if item["version"]})
+        collected_attributes = {key: [] for key in EXTRACTED_ATTRIBUTE_KEYS}
+        for item in evidence:
+            for key, value in item.get("attributes", {}).items():
+                if value and value not in collected_attributes.setdefault(key, []):
+                    collected_attributes[key].append(value)
+
+        matches.append(
+            {
+                "name": plugin["name"],
+                "categories": ["Imported Signatures"],
+                "website": plugin.get("website", ""),
+                "confidence": min(100, sum(item["confidence"] for item in evidence)),
+                "versions": versions,
+                "version": versions[0] if versions else "",
+                "matched_on": sorted({item["matched_on"] for item in evidence}),
+                "evidence": evidence,
+                "description": plugin.get("description", ""),
+                "plugin_version": plugin.get("plugin_version", ""),
+                "source": "signature_plugins",
+                "attributes": {key: value for key, value in collected_attributes.items() if value},
+            }
+        )
+
+    matches.sort(key=lambda item: (item["confidence"], item["name"].lower()), reverse=True)
+    return matches
 
 
 def get_technology_definition(name: str, tech_file: str | None = None) -> dict | None:
@@ -482,7 +691,18 @@ def get_technology_definition(name: str, tech_file: str | None = None) -> dict |
         Matching technology definition or ``None``.
     """
     catalog = get_cached_technology_catalog(tech_file)
-    return catalog["technologies"].get(name)
+    plugin_match = next((plugin for plugin in get_cached_plugin_signatures().get("plugins", []) if plugin["name"] == name), None)
+    if name in catalog["technologies"]:
+        definition = dict(catalog["technologies"][name])
+        definition["source"] = "definitions,signature_plugins" if plugin_match else "definitions"
+        if plugin_match:
+            definition["plugin_signature"] = plugin_match
+        return definition
+    if plugin_match:
+        definition = dict(plugin_match)
+        definition["source"] = "signature_plugins"
+        return definition
+    return None
 
 
 def fingerprint_page(
@@ -492,6 +712,8 @@ def fingerprint_page(
     tech_file: str | None = None,
     include_implied: bool = True,
     aggression: int = 1,
+    status_code: int | None = None,
+    plugin_file: str | None = None,
 ) -> dict:
     """Fingerprint technologies and generic page features from a response.
 
@@ -502,6 +724,8 @@ def fingerprint_page(
         tech_file: Optional definitions file path.
         include_implied: Whether implied technologies should be expanded.
         aggression: Matching aggression level.
+        status_code: Optional HTTP status code.
+        plugin_file: Optional imported plugin signature file path.
 
     Returns:
         Fingerprint payload.
@@ -525,6 +749,7 @@ def fingerprint_page(
             "matched_on": sorted({item["matched_on"] for item in evidence}),
             "implies": definition["implies"],
             "evidence": evidence,
+            "source": "definitions",
         }
 
     if include_implied:
@@ -553,6 +778,41 @@ def fingerprint_page(
 
     technologies = sorted(
         matched.values(),
+        key=lambda item: (item["confidence"], item["name"].lower()),
+        reverse=True,
+    )
+    imported_plugins = fingerprint_imported_plugins(
+        url,
+        html,
+        headers=headers,
+        plugin_file=plugin_file,
+        aggression=aggression,
+        status_code=status_code,
+    )
+    combined = {item["name"]: item for item in technologies}
+    for item in imported_plugins:
+        if item["name"] in combined:
+            existing = combined[item["name"]]
+            existing["confidence"] = max(existing["confidence"], item["confidence"])
+            existing["matched_on"] = sorted(set(existing.get("matched_on", [])) | set(item.get("matched_on", [])))
+            existing["evidence"] = existing.get("evidence", []) + item.get("evidence", [])
+            if not existing.get("version") and item.get("version"):
+                existing["version"] = item["version"]
+            if item.get("version"):
+                versions = set(existing.get("versions", []))
+                versions.update(item.get("versions", []))
+                existing["versions"] = sorted(versions)
+            existing.setdefault("attributes", {})
+            for key, values in item.get("attributes", {}).items():
+                target = existing["attributes"].setdefault(key, [])
+                for value in values:
+                    if value not in target:
+                        target.append(value)
+            existing["source"] = "combined"
+        else:
+            combined[item["name"]] = item
+    technologies = sorted(
+        combined.values(),
         key=lambda item: (item["confidence"], item["name"].lower()),
         reverse=True,
     )

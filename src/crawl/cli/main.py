@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
+from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -296,6 +296,10 @@ def build_parser() -> argparse.ArgumentParser:
     tech_update_parser = subparsers.add_parser("tech-update", help="Refresh the technology definitions file.")
     tech_update_parser.add_argument("--tech-file", dest="tech_file")
 
+    tech_import_parser = subparsers.add_parser("tech-import", help="Build the bundled plugin signature cache from local plugin directories.")
+    tech_import_parser.add_argument("plugin_dirs", nargs="+", help="Plugin directory paths.")
+    tech_import_parser.add_argument("--output-file", dest="output_file")
+
     tech_grep_parser = subparsers.add_parser("tech-grep", help="Search page signals with a literal string or regex.")
     tech_grep_parser.add_argument("url", help="Page URL.")
     tech_grep_parser.add_argument("--text", dest="text")
@@ -553,6 +557,9 @@ async def run_command(args: argparse.Namespace):
 
     if args.command == "tech-update":
         return update_technology_definitions(args.tech_file)
+
+    if args.command == "tech-import":
+        return build_plugin_signature_file(args.plugin_dirs, output_file=args.output_file)
 
     if args.command == "tech-grep":
         return await tech_grep(

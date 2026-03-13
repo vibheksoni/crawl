@@ -213,6 +213,7 @@ python cli.py tech-grep https://nextjs.org --text next.js --search headers[x-pow
 python cli.py tech-list --search next --limit 10
 python cli.py tech-info Next.js
 python cli.py tech-update
+python cli.py tech-import C:\\path\\to\\plugin-dir --output-file .\\plugin-signatures.json
 python cli.py query https://www.python.org "data science" --cache
 python cli.py research "python async browser automation" --provider auto --max-results 5 --pages 1 --research-limit 3 --cache
 python cli.py fetch https://example.com --format text --mode auto --cache --cache-dir .crawl_cache
@@ -254,6 +255,8 @@ SDK users can also pass lightweight lifecycle hooks into `fetch_page()` and `cra
 Technology fingerprinting supports lightweight aggression levels inspired by classic web scanners. Level `1` uses cheap passive contexts such as headers, cookies, meta tags, and URLs. Level `2` adds script source matching. Level `3` enables full HTML body pattern matching. The bundled definitions file can be refreshed with `tech-update`.
 
 If the `tech` command receives a bare hostname instead of a full URL, it will try both `https://` and `http://` variants automatically. `tech-grep` provides ad-hoc text or regex matching against contexts such as `body`, `all`, `url`, `headers`, `headers[name]`, `meta[name]`, and `script`.
+
+The bundled plugin-signature cache can also be rebuilt locally with `tech-import` if you want to regenerate the declarative fingerprint corpus from one or more local plugin directories.
 
 ## MCP Usage
 
