@@ -31,7 +31,7 @@ async def websearch(
     proxy_urls: list[str] | None = None,
     scrape_results: bool = False,
     scrape_limit: int = 3,
-    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata"]] | None = None,
+    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata", "app_state"]] | None = None,
     only_main_content: bool = True,
     cache: bool = False,
     cache_dir: str | None = None,
@@ -141,7 +141,7 @@ async def fetch(
 @mcp.tool()
 async def scrape(
     url: str,
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -177,7 +177,7 @@ async def scrape(
 @mcp.tool()
 async def batch_scrape(
     urls: list[str],
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -366,6 +366,7 @@ async def fetch_page(
     retry_backoff_ms: int = 500,
     include_headers: bool = False,
     include_html: bool = False,
+    include_app_state: bool = False,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -394,6 +395,7 @@ async def fetch_page(
         retry_backoff_ms: Base retry backoff in milliseconds.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
+        include_app_state: Whether to extract embedded hydration payloads.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -423,6 +425,7 @@ async def fetch_page(
         retry_backoff_ms=retry_backoff_ms,
         include_headers=include_headers,
         include_html=include_html,
+        include_app_state=include_app_state,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,

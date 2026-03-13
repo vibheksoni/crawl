@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
     search_parser.add_argument(
         "--scrape-format",
-        choices=["markdown", "text", "html", "links", "metadata"],
+        choices=["markdown", "text", "html", "links", "metadata", "app_state"],
         action="append",
         dest="scrape_formats",
     )
@@ -134,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("url", help="Page URL.")
     scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"],
         action="append",
         dest="formats",
     )
@@ -155,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
     batch_scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"],
         action="append",
         dest="formats",
     )
@@ -251,6 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
+    fetch_page_parser.add_argument("--include-app-state", action="store_true", dest="include_app_state")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -484,6 +485,7 @@ async def run_command(args: argparse.Namespace):
             retry_backoff_ms=args.retry_backoff_ms,
             include_headers=args.include_headers,
             include_html=args.include_html,
+            include_app_state=args.include_app_state,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,

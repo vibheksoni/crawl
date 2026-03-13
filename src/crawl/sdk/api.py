@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
+from .app_state import extract_app_state
 from .browser import (
     browser_session,
     collect_request_capture,
@@ -770,6 +771,7 @@ def build_page_result(
     forms: list[dict] | None = None,
     requests: list[dict] | None = None,
     interactions: list[str] | None = None,
+    app_state: dict | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -781,6 +783,7 @@ def build_page_result(
         include_html: Whether to include raw HTML.
         source: Source used to fetch the page.
         fallback_used: Whether browser fallback was used after HTTP.
+        app_state: Optional embedded hydration and structured payloads.
 
     Returns:
         Normalized page result payload.
@@ -814,6 +817,8 @@ def build_page_result(
         result["requests"] = requests
     if interactions is not None:
         result["interactions"] = interactions
+    if app_state is not None:
+        result["app_state"] = app_state
 
     if include_headers:
         result["headers"] = page_data["headers"]
@@ -854,6 +859,7 @@ async def _fetch_page(
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
+    include_app_state: bool = False,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -888,6 +894,7 @@ async def _fetch_page(
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
+        include_app_state: Whether to extract embedded hydration payloads.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -1022,6 +1029,7 @@ async def _fetch_page(
             if include_forms
             else None
         )
+        app_state = extract_app_state(page_data["html"]) if include_app_state else None
     else:
         page_meta = {
             "title": "",
@@ -1040,6 +1048,7 @@ async def _fetch_page(
         }
         signature = None
         forms = [] if include_forms else None
+        app_state = None
 
     result = build_page_result(
         page_data,
@@ -1054,6 +1063,7 @@ async def _fetch_page(
         forms=forms,
         requests=page_data.get("requests") if include_requests else None,
         interactions=page_data.get("interactions") or None,
+        app_state=app_state,
     )
     return result, page_meta["links"]
 
@@ -1086,6 +1096,7 @@ async def fetch_page(
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
+    include_app_state: bool = False,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -1117,6 +1128,7 @@ async def fetch_page(
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
+        include_app_state: Whether to extract embedded hydration payloads.
 
     Returns:
         Structured page details and discovered links.
@@ -1149,6 +1161,7 @@ async def fetch_page(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
         retry_status_codes=retry_status_codes,
+        include_app_state=include_app_state,
     )
     return result
 
@@ -1253,6 +1266,7 @@ async def scrape(
         mode=mode,
         include_html=True,
         include_headers=True,
+        include_app_state=bool(formats and "app_state" in formats),
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,

@@ -5,7 +5,7 @@ from typing import Literal
 from .chunking import rank_text_chunks
 from .page import extract_links_from_html, render_clean_html, render_page_content
 
-ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown"]
+ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state"]
 
 
 def build_scrape_result(
@@ -56,6 +56,8 @@ def build_scrape_result(
         )
     if "metadata" in requested_formats:
         result["metadata"] = page_result.get("metadata", {})
+    if "app_state" in requested_formats:
+        result["app_state"] = page_result.get("app_state", {})
     if "fit_markdown" in requested_formats:
         markdown = render_page_content(
             html,
