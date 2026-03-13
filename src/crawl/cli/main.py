@@ -218,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--exclude-pattern", action="append", dest="exclude_patterns")
     fetch_page_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     fetch_page_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
+    fetch_page_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
+    fetch_page_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
+    fetch_page_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
+    fetch_page_parser.add_argument("--session-dir", dest="session_dir")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -231,7 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
     crawl_parser.add_argument("--max-pages", type=int, default=10, dest="max_pages")
-    crawl_parser.add_argument("--mode", choices=["fast", "auto"], default="auto")
+    crawl_parser.add_argument("--mode", choices=["fast", "auto", "browser"], default="auto")
     crawl_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
     crawl_parser.add_argument("--max-depth", type=int, default=2, dest="max_depth")
     crawl_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
@@ -241,6 +245,10 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     crawl_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
     crawl_parser.add_argument("--dedupe-by-signature", action="store_true", dest="dedupe_by_signature")
+    crawl_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
+    crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
+    crawl_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
+    crawl_parser.add_argument("--session-dir", dest="session_dir")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     crawl_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
     crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
@@ -430,6 +438,10 @@ async def run_command(args: argparse.Namespace):
             exclude_patterns=args.exclude_patterns,
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
+            include_requests=args.include_requests,
+            interaction_mode=args.interaction_mode,
+            max_interactions=args.max_interactions,
+            session_dir=args.session_dir,
             include_headers=args.include_headers,
             include_html=args.include_html,
             cache=args.cache,
@@ -455,6 +467,10 @@ async def run_command(args: argparse.Namespace):
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
             dedupe_by_signature=args.dedupe_by_signature,
+            include_requests=args.include_requests,
+            interaction_mode=args.interaction_mode,
+            max_interactions=args.max_interactions,
+            session_dir=args.session_dir,
             include_headers=args.include_headers,
             respect_robots_txt=args.respect_robots_txt,
             sitemap_url=args.sitemap_url,

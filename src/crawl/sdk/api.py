@@ -13,7 +13,13 @@ from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
-from .browser import browser_session, configure_page_request_settings
+from .browser import (
+    browser_session,
+    collect_request_capture,
+    configure_page_request_settings,
+    enable_request_capture,
+    perform_basic_interactions,
+)
 from .cache import load_cached_page, save_cached_page
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .extract import extract_structured_data
@@ -505,6 +511,10 @@ async def request_browser_page(
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
+    session_dir: str | None = None,
+    capture_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
 ) -> dict:
     """Fetch a page through the browser.
 
@@ -514,14 +524,24 @@ async def request_browser_page(
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional proxy URL.
+        session_dir: Optional persistent browser profile directory.
+        capture_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
 
     Returns:
         Structured browser response data.
     """
     started_at = time.perf_counter()
     browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
-    async with browser_session(headless=False, browser_args=browser_args) as browser:
+    async with browser_session(
+        headless=False,
+        browser_args=browser_args,
+        session_dir=session_dir,
+    ) as browser:
         page = await browser.get("about:blank")
+        if capture_requests:
+            await enable_request_capture(page)
         await configure_page_request_settings(
             page,
             user_agent=user_agent,
@@ -530,8 +550,14 @@ async def request_browser_page(
         )
         await page.get(url)
         await page.sleep(2)
+        interactions = []
+        if interaction_mode == "auto":
+            interactions = await perform_basic_interactions(page, max_clicks=max_interactions)
+            if interactions:
+                await page.sleep(1)
 
         html = await page.get_content()
+        requests = await collect_request_capture(page) if capture_requests else []
         return {
             "url": url,
             "final_url": page.url,
@@ -542,6 +568,8 @@ async def request_browser_page(
             "bytes_transferred": len(html.encode("utf-8")),
             "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
             "ssl_fallback_used": False,
+            "requests": requests,
+            "interactions": interactions,
         }
 
 
@@ -556,6 +584,8 @@ def build_page_result(
     cache_hit: bool = False,
     signature: str | None = None,
     forms: list[dict] | None = None,
+    requests: list[dict] | None = None,
+    interactions: list[str] | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -596,6 +626,10 @@ def build_page_result(
 
     if forms is not None:
         result["forms"] = forms
+    if requests is not None:
+        result["requests"] = requests
+    if interactions is not None:
+        result["interactions"] = interactions
 
     if include_headers:
         result["headers"] = page_data["headers"]
@@ -629,6 +663,10 @@ async def _fetch_page(
     full_resources: bool = False,
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -656,6 +694,10 @@ async def _fetch_page(
         full_resources: Whether to include resource URLs in discovery.
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -689,6 +731,10 @@ async def _fetch_page(
                 headers=headers,
                 accept_invalid_certs=accept_invalid_certs,
                 proxy_url=selected_proxy,
+                session_dir=session_dir,
+                capture_requests=include_requests,
+                interaction_mode=interaction_mode,
+                max_interactions=max_interactions,
             )
             source = "browser"
         else:
@@ -722,6 +768,10 @@ async def _fetch_page(
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
+                    session_dir=session_dir,
+                    capture_requests=include_requests,
+                    interaction_mode=interaction_mode,
+                    max_interactions=max_interactions,
                 )
                 source = "browser"
                 fallback_used = True
@@ -737,6 +787,10 @@ async def _fetch_page(
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
+                    session_dir=session_dir,
+                    capture_requests=include_requests,
+                    interaction_mode=interaction_mode,
+                    max_interactions=max_interactions,
                 )
                 browser_data["status_code"] = page_data["status_code"]
                 browser_data["ssl_fallback_used"] = page_data["ssl_fallback_used"]
@@ -802,6 +856,8 @@ async def _fetch_page(
         cache_hit=cache_hit,
         signature=signature,
         forms=forms,
+        requests=page_data.get("requests") if include_requests else None,
+        interactions=page_data.get("interactions") or None,
     )
     return result, page_meta["links"]
 
@@ -827,6 +883,10 @@ async def fetch_page(
     full_resources: bool = False,
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -851,6 +911,10 @@ async def fetch_page(
         full_resources: Whether to include resource URLs in discovery.
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
 
     Returns:
         Structured page details and discovered links.
@@ -876,6 +940,10 @@ async def fetch_page(
         full_resources=full_resources,
         include_forms=include_forms,
         include_form_fill_suggestions=include_form_fill_suggestions,
+        include_requests=include_requests,
+        interaction_mode=interaction_mode,
+        max_interactions=max_interactions,
+        session_dir=session_dir,
     )
     return result
 
@@ -1330,7 +1398,7 @@ async def crawl_one_page(
     session: AsyncSession,
     url: str,
     depth: int,
-    mode: Literal["fast", "auto"],
+    mode: Literal["fast", "auto", "browser"],
     allow_subdomains: bool = False,
     allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
@@ -1347,6 +1415,10 @@ async def crawl_one_page(
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
     full_resources: bool = False,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -1371,6 +1443,10 @@ async def crawl_one_page(
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
         full_resources: Whether to include resource URLs in discovery.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -1378,7 +1454,7 @@ async def crawl_one_page(
     try:
         return await _fetch_page(
             url=url,
-            mode="http" if mode == "fast" else "auto",
+            mode="http" if mode == "fast" else ("browser" if mode == "browser" else "auto"),
             allow_subdomains=allow_subdomains,
             allowed_domains=allowed_domains,
             include_patterns=include_patterns,
@@ -1397,6 +1473,10 @@ async def crawl_one_page(
             proxy_urls=proxy_urls,
             proxy_index=proxy_index,
             full_resources=full_resources,
+            include_requests=include_requests,
+            interaction_mode=interaction_mode,
+            max_interactions=max_interactions,
+            session_dir=session_dir,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -1405,7 +1485,7 @@ async def crawl_one_page(
 async def crawl(
     url: str,
     max_pages: int = 10,
-    mode: Literal["fast", "auto"] = "auto",
+    mode: Literal["fast", "auto", "browser"] = "auto",
     max_concurrency: int = 4,
     max_depth: int = 2,
     allow_subdomains: bool = False,
@@ -1430,13 +1510,17 @@ async def crawl(
     dedupe_by_signature: bool = False,
     delay_ms: int = 0,
     path_delays: dict[str, int] | None = None,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
     Args:
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
-        mode: Crawl strategy, either ``fast`` or ``auto``.
+        mode: Crawl strategy, either ``fast``, ``auto``, or ``browser``.
         max_concurrency: Maximum parallel HTTP requests.
         max_depth: Maximum crawl depth from the start URL.
         allow_subdomains: Whether subdomains should be considered in-scope.
@@ -1461,6 +1545,10 @@ async def crawl(
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
         delay_ms: Default crawl delay in milliseconds.
         path_delays: Optional per-path delay mapping in milliseconds.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -1600,6 +1688,10 @@ async def crawl(
                         proxy_urls=normalized_proxy_urls,
                         proxy_index=len(results) + batch_index,
                         full_resources=full_resources,
+                        include_requests=include_requests,
+                        interaction_mode=interaction_mode,
+                        max_interactions=max_interactions,
+                        session_dir=session_dir,
                     )
                     for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
@@ -1665,6 +1757,8 @@ async def crawl(
         "dedupe_by_signature": dedupe_by_signature,
         "delay_ms": delay_ms,
         "path_delays": normalized_delay_map,
+        "include_requests": include_requests,
+        "interaction_mode": interaction_mode,
         "pages_crawled": len(results),
         "results": results,
     }

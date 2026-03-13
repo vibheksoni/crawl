@@ -352,6 +352,10 @@ async def fetch_page(
     exclude_patterns: list[str] | None = None,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     full_resources: bool = False,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
     include_headers: bool = False,
     include_html: bool = False,
     cache: bool = False,
@@ -374,6 +378,10 @@ async def fetch_page(
         exclude_patterns: Optional exclude patterns for discovered links.
         pattern_mode: Pattern matching mode.
         full_resources: Whether to include resource URLs in discovery.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
         cache: Whether to use disk caching.
@@ -397,6 +405,10 @@ async def fetch_page(
         exclude_patterns=exclude_patterns,
         pattern_mode=pattern_mode,
         full_resources=full_resources,
+        include_requests=include_requests,
+        interaction_mode=interaction_mode,
+        max_interactions=max_interactions,
+        session_dir=session_dir,
         include_headers=include_headers,
         include_html=include_html,
         cache=cache,
@@ -414,7 +426,7 @@ async def fetch_page(
 async def crawl(
     url: str,
     max_pages: int = 10,
-    mode: Literal["fast", "auto"] = "auto",
+    mode: Literal["fast", "auto", "browser"] = "auto",
     max_concurrency: int = 4,
     max_depth: int = 2,
     allow_subdomains: bool = False,
@@ -424,6 +436,10 @@ async def crawl(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     full_resources: bool = False,
     dedupe_by_signature: bool = False,
+    include_requests: bool = False,
+    interaction_mode: Literal["none", "auto"] = "none",
+    max_interactions: int = 3,
+    session_dir: str | None = None,
     include_headers: bool = False,
     respect_robots_txt: bool = False,
     sitemap_url: str | None = None,
@@ -445,7 +461,7 @@ async def crawl(
     Args:
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
-        mode: Crawl strategy, either ``fast`` or ``auto``.
+        mode: Crawl strategy, either ``fast``, ``auto``, or ``browser``.
         max_concurrency: Maximum parallel HTTP requests.
         max_depth: Maximum crawl depth from the start URL.
         allow_subdomains: Whether subdomains should be considered in-scope.
@@ -455,6 +471,10 @@ async def crawl(
         pattern_mode: Pattern matching mode.
         full_resources: Whether to include resource URLs in crawl discovery.
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
+        include_requests: Whether to capture browser requests.
+        interaction_mode: Interaction mode for simple page interactions.
+        max_interactions: Maximum interactions to perform.
+        session_dir: Optional persistent browser profile directory.
         include_headers: Whether to include response headers in results.
         respect_robots_txt: Whether to enforce robots.txt access rules.
         sitemap_url: Optional sitemap URL to seed the crawl.
@@ -487,6 +507,10 @@ async def crawl(
         pattern_mode=pattern_mode,
         full_resources=full_resources,
         dedupe_by_signature=dedupe_by_signature,
+        include_requests=include_requests,
+        interaction_mode=interaction_mode,
+        max_interactions=max_interactions,
+        session_dir=session_dir,
         include_headers=include_headers,
         respect_robots_txt=respect_robots_txt,
         sitemap_url=sitemap_url,
