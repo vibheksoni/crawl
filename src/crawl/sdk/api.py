@@ -6,11 +6,12 @@ import io
 import os
 import tempfile
 import time
+import warnings
 from collections import deque
 from typing import Literal
 from urllib.parse import quote_plus, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
@@ -35,6 +36,7 @@ from .contacts import extract_contacts_from_html
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .crawl_state import load_crawl_state, save_crawl_state, serialize_frontier
 from .extract import extract_structured_data
+from .feeds import analyze_feed_document, discover_feed_candidates, discover_feed_spider_links, merge_feed_candidates
 from .forms import extract_forms
 from .google import (
     extract_ai_overview,
@@ -2349,6 +2351,183 @@ async def forms(
         "metadata": page.get("metadata", {}),
         "forms": page.get("forms", []),
         "count": len(page.get("forms", [])),
+    }
+
+
+async def feeds(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    spider_depth: int = 0,
+    spider_limit: int = 10,
+    max_candidates: int = 20,
+    max_feeds: int = 10,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Discover and validate RSS, Atom, RDF, or JSON feeds for a site.
+
+    Args:
+        url: Starting URL or homepage.
+        mode: Fetch strategy for discovery pages.
+        spider_depth: Internal page spider depth for more feed hints.
+        spider_limit: Maximum internal pages to spider.
+        max_candidates: Maximum feed candidates to validate.
+        max_feeds: Maximum validated feeds to return.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+
+    Returns:
+        Feed discovery payload with validated feed metadata.
+    """
+    queued_pages = deque([(url, 0)])
+    queued_urls = {url}
+    scanned_pages = []
+    errors = []
+    raw_candidates = []
+    validated_feeds = []
+    seen_feed_urls = set()
+
+    async def load_feed_page(target_url: str) -> dict:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+            return await fetch_page(
+                url=target_url,
+                mode=mode,
+                include_html=True,
+                include_headers=True,
+                cache=cache,
+                cache_dir=cache_dir,
+                cache_ttl_seconds=cache_ttl_seconds,
+                cache_revalidate=cache_revalidate,
+                user_agent=user_agent,
+                headers=headers,
+                accept_invalid_certs=accept_invalid_certs,
+                proxy_url=proxy_url,
+                proxy_urls=proxy_urls,
+                max_retries=max_retries,
+                retry_backoff_ms=retry_backoff_ms,
+            )
+
+    while queued_pages and len(scanned_pages) < max(1, spider_limit if spider_depth > 0 else 1):
+        current_url, depth = queued_pages.popleft()
+        queued_urls.discard(current_url)
+
+        try:
+            page = await load_feed_page(current_url)
+        except Exception as error:
+            errors.append({"url": current_url, "depth": depth, "error": str(error)})
+            continue
+
+        final_url = page.get("final_url") or current_url
+        if final_url in {item["url"] for item in scanned_pages}:
+            continue
+
+        analysis = analyze_feed_document(
+            page.get("html", ""),
+            final_url,
+            content_type=page.get("content_type", ""),
+        )
+        page_entry = {
+            "url": final_url,
+            "depth": depth,
+            "title": page.get("title", ""),
+            "candidate_count": 0,
+            "is_feed": analysis.get("is_feed", False),
+        }
+
+        if analysis.get("is_feed"):
+            validated_feeds.append(
+                {
+                    **analysis,
+                    "sources": ["self"],
+                    "score": 200,
+                    "discovered_from": [final_url],
+                }
+            )
+            seen_feed_urls.add(final_url)
+            scanned_pages.append(page_entry)
+            continue
+
+        page_candidates = discover_feed_candidates(page.get("html", ""), final_url)
+        for candidate in page_candidates:
+            candidate["discovered_from"] = final_url
+        raw_candidates.extend(page_candidates)
+        page_entry["candidate_count"] = len(page_candidates)
+        scanned_pages.append(page_entry)
+
+        if depth >= spider_depth:
+            continue
+
+        for spider_url in discover_feed_spider_links(
+            page.get("html", ""),
+            final_url,
+            limit=max(1, spider_limit),
+        ):
+            if spider_url in queued_urls:
+                continue
+            queued_urls.add(spider_url)
+            queued_pages.append((spider_url, depth + 1))
+
+    merged_candidates = merge_feed_candidates(raw_candidates, max_candidates=max_candidates)
+
+    for candidate in merged_candidates:
+        candidate_url = candidate.get("url")
+        if not candidate_url or candidate_url in seen_feed_urls:
+            continue
+        try:
+            page = await load_feed_page(candidate_url)
+        except Exception as error:
+            errors.append({"url": candidate_url, "error": str(error)})
+            continue
+
+        analysis = analyze_feed_document(
+            page.get("html", ""),
+            page.get("final_url") or candidate_url,
+            content_type=page.get("content_type", ""),
+        )
+        if not analysis.get("is_feed"):
+            continue
+
+        validated_feed_url = analysis["url"]
+        if validated_feed_url in seen_feed_urls:
+            continue
+
+        seen_feed_urls.add(validated_feed_url)
+        validated_feeds.append({**candidate, **analysis})
+        if len(validated_feeds) >= max(1, max_feeds):
+            break
+
+    return {
+        "start_url": url,
+        "mode": mode,
+        "spider_depth": spider_depth,
+        "spider_limit": spider_limit,
+        "max_candidates": max_candidates,
+        "max_feeds": max_feeds,
+        "scanned_pages": scanned_pages,
+        "page_count": len(scanned_pages),
+        "candidate_count": len(merged_candidates),
+        "feeds": validated_feeds,
+        "feed_count": len(validated_feeds),
+        "errors": errors,
     }
 
 

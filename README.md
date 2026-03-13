@@ -51,7 +51,7 @@ python -m pip install -r requirements.txt
 ```python
 import asyncio
 
-from crawl.sdk import batch_scrape, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, tech, websearch
+from crawl.sdk import batch_scrape, contacts, crawl, extract, fetch, fetch_page, feeds, forms, map_site, query_page, research, scrape, tech, websearch
 
 
 async def main() -> None:
@@ -111,6 +111,11 @@ async def main() -> None:
     form_data = await forms(
         "https://httpbin.org/forms/post",
         include_fill_suggestions=True,
+        cache=True,
+    )
+    feed_data = await feeds(
+        "https://www.python.org/blogs/",
+        spider_depth=1,
         cache=True,
     )
     contact_data = await contacts(
@@ -207,6 +212,7 @@ python cli.py batch-scrape https://example.com https://www.python.org --format m
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --limit 5 --include-pattern tutorial --max-retries 2 --retry-backoff-ms 250
 python cli.py extract https://www.python.org/events/python-events/ --schema-file _ignore\\extract-schema.json --cache
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
+python cli.py feeds https://www.python.org/blogs/ --mode http --spider-depth 1 --max-feeds 5 --cache
 python cli.py contacts https://www.python.org --cache
 python cli.py tech https://nextjs.org --mode http --aggression 1
 python cli.py tech-grep https://nextjs.org --text next.js --search headers[x-powered-by]
@@ -249,6 +255,8 @@ If you enable `cache_revalidate=True` in the SDK or `--cache-revalidate` in the 
 
 Most CLI commands can also append normalized row outputs into a local dataset with `--dataset-dir` and `--dataset-name`, then export those persisted rows later with `dataset-export` as JSON, JSONL, or CSV.
 
+Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
+
 Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or `--session-dir` in the CLI, browser cookies and profile state are reused. If you omit it, browser sessions remain ephemeral.
 
 Crawl queue persistence is also opt-in. If you pass `state_path` in the SDK or `--state-path` in the CLI, the crawler will autosave frontier, visited URLs, budget state, signatures, and accumulated results after each batch and resume from the saved state on the next run.
@@ -287,6 +295,7 @@ crawl-mcp
 - `map_site`: discovers URLs within a site and can rank them by relevance to a search phrase
 - `extract`: performs selector-based structured extraction using reusable schemas
 - `forms`: extracts forms and can generate safe fill previews
+- `feeds`: discovers and validates RSS, Atom, RDF, and JSON Feed endpoints from a page or small internal site slice
 - `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `tech`: fingerprints technologies, versions, categories, implied stacks, and generic page signals from a page or small site slice
 - `tech_grep`: performs ad-hoc literal or regex matching across page signal contexts for scanner-style custom checks

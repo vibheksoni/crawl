@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
+from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -252,6 +252,25 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
     forms_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(forms_parser)
+
+    feeds_parser = subparsers.add_parser("feeds", help="Discover RSS, Atom, RDF, or JSON feeds for a site.")
+    feeds_parser.add_argument("url", help="Start URL.")
+    feeds_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    feeds_parser.add_argument("--spider-depth", type=int, default=0, dest="spider_depth")
+    feeds_parser.add_argument("--spider-limit", type=int, default=10, dest="spider_limit")
+    feeds_parser.add_argument("--max-candidates", type=int, default=20, dest="max_candidates")
+    feeds_parser.add_argument("--max-feeds", type=int, default=10, dest="max_feeds")
+    feeds_parser.add_argument("--cache", action="store_true", dest="cache")
+    feeds_parser.add_argument("--cache-dir", dest="cache_dir")
+    feeds_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(feeds_parser)
+    feeds_parser.add_argument("--user-agent", dest="user_agent")
+    feeds_parser.add_argument("--header", action="append", dest="header_entries")
+    feeds_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    feeds_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    feeds_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    feeds_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    add_common_output_options(feeds_parser)
 
     contacts_parser = subparsers.add_parser("contacts", help="Extract contact details and social links from a page.")
     contacts_parser.add_argument("url", help="Page URL.")
@@ -709,6 +728,26 @@ async def run_command(args: argparse.Namespace):
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
             include_fill_suggestions=args.include_fill_suggestions,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+        )
+
+    if args.command == "feeds":
+        return await feeds(
+            args.url,
+            mode=args.mode,
+            spider_depth=args.spider_depth,
+            spider_limit=args.spider_limit,
+            max_candidates=args.max_candidates,
+            max_feeds=args.max_feeds,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
         )

@@ -12,6 +12,7 @@ from crawl.sdk import fetch_page as sdk_fetch_page
 from crawl.sdk import batch_scrape as sdk_batch_scrape
 from crawl.sdk import export_dataset as sdk_export_dataset
 from crawl.sdk import extract as sdk_extract
+from crawl.sdk import feeds as sdk_feeds
 from crawl.sdk import forms as sdk_forms
 from crawl.sdk import get_technology_definition as sdk_get_technology_definition
 from crawl.sdk import map_site as sdk_map_site
@@ -443,6 +444,48 @@ async def forms(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
         include_fill_suggestions=include_fill_suggestions,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+
+
+@mcp.tool()
+async def feeds(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    spider_depth: int = 0,
+    spider_limit: int = 10,
+    max_candidates: int = 20,
+    max_feeds: int = 10,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Run the SDK feed discovery workflow through the MCP transport."""
+    return await sdk_feeds(
+        url=url,
+        mode=mode,
+        spider_depth=spider_depth,
+        spider_limit=spider_limit,
+        max_candidates=max_candidates,
+        max_feeds=max_feeds,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
