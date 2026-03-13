@@ -126,6 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     fetch_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    fetch_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    fetch_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(fetch_parser)
 
     scrape_parser = subparsers.add_parser("scrape", help="Run the multi-format scrape command.")
@@ -245,6 +247,8 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     fetch_page_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     fetch_page_parser.add_argument("--session-dir", dest="session_dir")
+    fetch_page_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    fetch_page_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     fetch_page_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     fetch_page_parser.add_argument("--include-html", action="store_true", dest="include_html")
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -275,6 +279,11 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     crawl_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     crawl_parser.add_argument("--session-dir", dest="session_dir")
+    crawl_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    crawl_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    crawl_parser.add_argument("--auto-throttle", action="store_true", dest="auto_throttle")
+    crawl_parser.add_argument("--minimum-delay-ms", type=int, default=0, dest="minimum_delay_ms")
+    crawl_parser.add_argument("--maximum-delay-ms", type=int, default=5000, dest="maximum_delay_ms")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
     crawl_parser.add_argument("--respect-robots-txt", action="store_true", dest="respect_robots_txt")
     crawl_parser.add_argument("--sitemap-url", dest="sitemap_url")
@@ -357,6 +366,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "scrape":
@@ -469,6 +480,8 @@ async def run_command(args: argparse.Namespace):
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
             include_headers=args.include_headers,
             include_html=args.include_html,
             cache=args.cache,
@@ -500,6 +513,11 @@ async def run_command(args: argparse.Namespace):
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+            auto_throttle=args.auto_throttle,
+            minimum_delay_ms=args.minimum_delay_ms,
+            maximum_delay_ms=args.maximum_delay_ms,
             include_headers=args.include_headers,
             respect_robots_txt=args.respect_robots_txt,
             sitemap_url=args.sitemap_url,

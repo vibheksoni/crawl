@@ -1083,6 +1083,9 @@ async def fetch_page(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
 ) -> dict:
     """Fetch a page and return structured details.
 
@@ -1111,6 +1114,9 @@ async def fetch_page(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
 
     Returns:
         Structured page details and discovered links.
@@ -1140,6 +1146,9 @@ async def fetch_page(
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+        retry_status_codes=retry_status_codes,
     )
     return result
 
@@ -1157,6 +1166,9 @@ async def fetch(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     only_main_content: bool = True,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
 ) -> str:
     """Fetch a URL and convert the page into markdown or plain text.
 
@@ -1173,6 +1185,9 @@ async def fetch(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         only_main_content: Whether to prefer main content.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
 
     Returns:
         Rendered page content.
@@ -1189,6 +1204,9 @@ async def fetch(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+        retry_status_codes=retry_status_codes,
     )
     return render_page_content(page["html"], output_format, only_main_content=only_main_content)
 
@@ -1615,6 +1633,9 @@ async def crawl_one_page(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch and parse a single crawled page.
 
@@ -1643,6 +1664,9 @@ async def crawl_one_page(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
 
     Returns:
         Tuple containing the result payload and discovered links.
@@ -1673,6 +1697,9 @@ async def crawl_one_page(
             interaction_mode=interaction_mode,
             max_interactions=max_interactions,
             session_dir=session_dir,
+            max_retries=max_retries,
+            retry_backoff_ms=retry_backoff_ms,
+            retry_status_codes=retry_status_codes,
         )
     except Exception as error:
         return {"url": url, "depth": depth, "error": str(error)}, []
@@ -1712,6 +1739,12 @@ async def crawl(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
+    auto_throttle: bool = False,
+    minimum_delay_ms: int = 0,
+    maximum_delay_ms: int = 5000,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -1749,6 +1782,12 @@ async def crawl(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
+        auto_throttle: Whether to adapt delay from observed timings.
+        minimum_delay_ms: Lower bound for adaptive delay.
+        maximum_delay_ms: Upper bound for adaptive delay.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -1892,6 +1931,9 @@ async def crawl(
                         interaction_mode=interaction_mode,
                         max_interactions=max_interactions,
                         session_dir=session_dir,
+                        max_retries=max_retries,
+                        retry_backoff_ms=retry_backoff_ms,
+                        retry_status_codes=retry_status_codes,
                     )
                     for batch_index, (current_url, current_depth) in enumerate(batch)
                 )
@@ -1940,6 +1982,15 @@ async def crawl(
                     robots_delay_ms = int(float(robots_info["crawl_delay"]) * 1000)
 
                 effective_delay_ms = max(batch_delay_ms, robots_delay_ms)
+                if auto_throttle:
+                    effective_delay_ms = max(
+                        effective_delay_ms,
+                        compute_auto_throttle_delay_ms(
+                            [result for result, _ in page_results],
+                            minimum_delay_ms=minimum_delay_ms,
+                            maximum_delay_ms=maximum_delay_ms,
+                        ),
+                    )
                 if effective_delay_ms > 0:
                     await asyncio.sleep(effective_delay_ms / 1000)
 
@@ -1967,6 +2018,10 @@ async def crawl(
         "path_delays": normalized_delay_map,
         "include_requests": include_requests,
         "interaction_mode": interaction_mode,
+        "max_retries": max_retries,
+        "retry_backoff_ms": retry_backoff_ms,
+        "retry_status_codes": retry_status_codes or default_retry_status_codes(),
+        "auto_throttle": auto_throttle,
         "pages_crawled": len(results),
         "results": results,
     }

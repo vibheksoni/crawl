@@ -186,9 +186,10 @@ python cli.py extract https://www.python.org/events/python-events/ --schema-file
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
 python cli.py query https://www.python.org "data science" --cache
 python cli.py fetch https://example.com --format text --mode auto --cache --cache-dir .crawl_cache
+python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
-python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-strategy best_first --crawl-query docs --allow-domain docs.python.org --budget "*=5" --budget "/3/tutorial/=3" --delay-ms 500 --path-delay "/3/tutorial/=1000" --seed-sitemap --full-resources --dedupe-by-signature --include-requests --interaction-mode auto --session-dir .\\browser-session --respect-robots-txt --cache
+python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-strategy best_first --crawl-query docs --allow-domain docs.python.org --budget "*=5" --budget "/3/tutorial/=3" --delay-ms 500 --path-delay "/3/tutorial/=1000" --auto-throttle --minimum-delay-ms 200 --maximum-delay-ms 1000 --seed-sitemap --full-resources --dedupe-by-signature --include-requests --interaction-mode auto --session-dir .\\browser-session --respect-robots-txt --cache
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
 python cli.py batch-scrape https://example.com https://www.python.org --format metadata --jsonl --field url --field metadata.title --store-field url
 python cli.py screenshot https://example.com --output example.jpg
@@ -203,7 +204,7 @@ crawl-cli --help
 
 If `--provider searxng` is used without `--searxng-url`, the code will look for `SEARXNG_URL` and then fall back to `http://127.0.0.1:8888`.
 
-`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `query`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `query`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
 
 Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or `--session-dir` in the CLI, browser cookies and profile state are reused. If you omit it, browser sessions remain ephemeral.
 
@@ -231,7 +232,7 @@ crawl-mcp
 - `forms`: extracts forms and can generate safe fill previews
 - `query_page`: returns query-relevant chunks and fit markdown from a page
 - `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
-- `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching
-- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, and SQLite caching
+- `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
+- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
 - `benchmark`: measures the HTTP-only crawler across multiple concurrency settings

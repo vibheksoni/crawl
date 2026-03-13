@@ -98,6 +98,8 @@ async def fetch(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> str:
     """Run the SDK fetch operation through the MCP transport.
 
@@ -113,6 +115,8 @@ async def fetch(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Rendered page content.
@@ -129,6 +133,8 @@ async def fetch(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -356,6 +362,8 @@ async def fetch_page(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
     include_headers: bool = False,
     include_html: bool = False,
     cache: bool = False,
@@ -382,6 +390,8 @@ async def fetch_page(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
         include_headers: Whether to include response headers.
         include_html: Whether to include raw HTML.
         cache: Whether to use disk caching.
@@ -409,6 +419,8 @@ async def fetch_page(
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
         include_headers=include_headers,
         include_html=include_html,
         cache=cache,
@@ -442,6 +454,11 @@ async def crawl(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    auto_throttle: bool = False,
+    minimum_delay_ms: int = 0,
+    maximum_delay_ms: int = 5000,
     include_headers: bool = False,
     respect_robots_txt: bool = False,
     sitemap_url: str | None = None,
@@ -479,6 +496,11 @@ async def crawl(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        auto_throttle: Whether to adapt delay from observed timings.
+        minimum_delay_ms: Lower bound for adaptive delay.
+        maximum_delay_ms: Upper bound for adaptive delay.
         include_headers: Whether to include response headers in results.
         respect_robots_txt: Whether to enforce robots.txt access rules.
         sitemap_url: Optional sitemap URL to seed the crawl.
@@ -517,6 +539,11 @@ async def crawl(
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+        auto_throttle=auto_throttle,
+        minimum_delay_ms=minimum_delay_ms,
+        maximum_delay_ms=maximum_delay_ms,
         include_headers=include_headers,
         respect_robots_txt=respect_robots_txt,
         sitemap_url=sitemap_url,
