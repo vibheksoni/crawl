@@ -179,10 +179,10 @@ Run from the repo root:
 python cli.py websearch "python async browser automation" --max-results 5 --pages 1
 python cli.py websearch "python async browser automation" --provider searxng --searxng-url http://127.0.0.1:8888 --max-results 5 --pages 2
 python cli.py websearch "python async browser automation" --provider auto --searxng-url http://127.0.0.1:8888 --max-results 5 --pages 1
-python cli.py websearch "python async browser automation" --provider hybrid --searxng-url http://127.0.0.1:8888 --scrape-results --scrape-limit 2 --scrape-format markdown --max-results 5 --pages 1
-python cli.py scrape https://www.python.org --format markdown --format links --format metadata --format app_state --cache
+python cli.py websearch "python async browser automation" --provider hybrid --searxng-url http://127.0.0.1:8888 --scrape-results --scrape-limit 2 --scrape-format markdown --max-results 5 --pages 1 --max-retries 2 --retry-backoff-ms 250
+python cli.py scrape https://www.python.org --format markdown --format links --format metadata --format app_state --max-retries 3 --retry-backoff-ms 250 --cache
 python cli.py batch-scrape https://example.com https://www.python.org --format markdown --format metadata --max-concurrency 2 --cache
-python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --limit 5 --include-pattern tutorial
+python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --limit 5 --include-pattern tutorial --max-retries 2 --retry-backoff-ms 250
 python cli.py extract https://www.python.org/events/python-events/ --schema-file _ignore\\extract-schema.json --cache
 python cli.py forms https://httpbin.org/forms/post --fill-preview --cache
 python cli.py query https://www.python.org "data science" --cache

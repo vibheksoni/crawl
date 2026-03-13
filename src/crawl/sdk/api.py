@@ -250,6 +250,8 @@ async def attach_scraped_search_results(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Attach scraped content to the top search results.
 
@@ -267,6 +269,8 @@ async def attach_scraped_search_results(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Search payload with scraped result attachments.
@@ -290,6 +294,8 @@ async def attach_scraped_search_results(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
     scraped_by_url = {
@@ -414,6 +420,8 @@ async def websearch(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Search the web through Google or SearXNG and normalize the results.
 
@@ -435,6 +443,8 @@ async def websearch(
         user_agent: Optional user-agent override for result scraping.
         headers: Optional extra headers for result scraping.
         accept_invalid_certs: Whether to ignore certificate errors for result scraping.
+        max_retries: Maximum retry attempts after the initial request for scraped results.
+        retry_backoff_ms: Base retry backoff in milliseconds for scraped results.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -491,6 +501,8 @@ async def websearch(
             accept_invalid_certs=accept_invalid_certs,
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
+            max_retries=max_retries,
+            retry_backoff_ms=retry_backoff_ms,
         )
 
     return search_payload
@@ -1240,6 +1252,8 @@ async def scrape(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Scrape a page into one or more content formats.
 
@@ -1258,6 +1272,8 @@ async def scrape(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Multi-format scrape payload.
@@ -1277,6 +1293,8 @@ async def scrape(
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
     return build_scrape_result(
         page,
@@ -1302,6 +1320,8 @@ async def batch_scrape(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Scrape multiple URLs with bounded concurrency.
 
@@ -1321,6 +1341,8 @@ async def batch_scrape(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Batch scrape payload with per-URL results.
@@ -1345,6 +1367,8 @@ async def batch_scrape(
                     pattern_mode=pattern_mode,
                     proxy_url=proxy_url,
                     proxy_urls=proxy_urls,
+                    max_retries=max_retries,
+                    retry_backoff_ms=retry_backoff_ms,
                 )
                 result["index"] = index
                 return result
@@ -1376,6 +1400,8 @@ async def query_page(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Extract query-relevant content from a page.
 
@@ -1391,6 +1417,8 @@ async def query_page(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Query-focused page payload.
@@ -1408,6 +1436,8 @@ async def query_page(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
     result = build_scrape_result(
         page,
@@ -1459,6 +1489,8 @@ async def map_site(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Map a site into discovered URLs with optional relevance ordering.
 
@@ -1483,6 +1515,8 @@ async def map_site(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         URL map payload with optional relevance scores.
@@ -1508,6 +1542,8 @@ async def map_site(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
     items = []
@@ -1554,6 +1590,8 @@ async def extract(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Extract structured data from a page using a selector-based schema.
 
@@ -1569,6 +1607,8 @@ async def extract(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Structured extraction payload.
@@ -1585,6 +1625,8 @@ async def extract(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
     return {
@@ -1607,6 +1649,8 @@ async def forms(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     include_fill_suggestions: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Extract forms from a page.
 
@@ -1622,6 +1666,8 @@ async def forms(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         include_fill_suggestions: Whether to include form fill previews.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
 
     Returns:
         Form extraction payload.
@@ -1640,6 +1686,8 @@ async def forms(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
     return {
         "url": page["final_url"],

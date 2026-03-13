@@ -113,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--user-agent", dest="user_agent")
     search_parser.add_argument("--header", action="append", dest="header_entries")
     search_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    search_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    search_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(search_parser)
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
@@ -149,6 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--header", action="append", dest="header_entries")
     scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    scrape_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    scrape_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(scrape_parser)
 
     batch_scrape_parser = subparsers.add_parser("batch-scrape", help="Run the multi-URL scrape command.")
@@ -171,6 +175,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--header", action="append", dest="header_entries")
     batch_scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     batch_scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    batch_scrape_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    batch_scrape_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(batch_scrape_parser)
 
     map_parser = subparsers.add_parser("map", help="Discover URLs within a site.")
@@ -193,6 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--header", action="append", dest="header_entries")
     map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    map_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    map_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(map_parser)
 
     extract_parser = subparsers.add_parser("extract", help="Run selector-based structured extraction.")
@@ -206,6 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--header", action="append", dest="header_entries")
     extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     extract_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    extract_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    extract_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(extract_parser)
 
     forms_parser = subparsers.add_parser("forms", help="Extract forms from a page.")
@@ -219,6 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     forms_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
     forms_parser.add_argument("--fill-preview", action="store_true", dest="include_fill_suggestions")
+    forms_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    forms_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(forms_parser)
 
     query_parser = subparsers.add_parser("query", help="Extract query-relevant content from a page.")
@@ -232,6 +244,8 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--header", action="append", dest="header_entries")
     query_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     query_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    query_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    query_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(query_parser)
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
@@ -353,6 +367,8 @@ async def run_command(args: argparse.Namespace):
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "fetch":
@@ -384,6 +400,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "query":
@@ -398,6 +416,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "batch-scrape":
@@ -414,6 +434,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "map":
@@ -437,6 +459,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "extract":
@@ -451,6 +475,8 @@ async def run_command(args: argparse.Namespace):
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "forms":
@@ -465,6 +491,8 @@ async def run_command(args: argparse.Namespace):
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
             include_fill_suggestions=args.include_fill_suggestions,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
         )
 
     if args.command == "fetch-page":

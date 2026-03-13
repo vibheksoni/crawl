@@ -39,6 +39,8 @@ async def websearch(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK web search through the MCP transport.
 
@@ -60,6 +62,8 @@ async def websearch(
         user_agent: Optional user-agent override for result scraping.
         headers: Optional extra headers for result scraping.
         accept_invalid_certs: Whether to ignore certificate errors for result scraping.
+        max_retries: Maximum retry attempts after the initial request for scraped results.
+        retry_backoff_ms: Base retry backoff in milliseconds for scraped results.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -82,6 +86,8 @@ async def websearch(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -154,6 +160,8 @@ async def scrape(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK multi-format scrape through the MCP transport."""
     return await sdk_scrape(
@@ -171,6 +179,8 @@ async def scrape(
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -190,6 +200,8 @@ async def batch_scrape(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK multi-URL scrape through the MCP transport."""
     return await sdk_batch_scrape(
@@ -207,6 +219,8 @@ async def batch_scrape(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -232,6 +246,8 @@ async def map(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK site mapping through the MCP transport."""
     return await sdk_map_site(
@@ -255,6 +271,8 @@ async def map(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -271,6 +289,8 @@ async def query(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK query-focused page extraction through the MCP transport."""
     return await sdk_query_page(
@@ -285,6 +305,8 @@ async def query(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -301,6 +323,8 @@ async def extract(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK selector-based extraction through the MCP transport."""
     return await sdk_extract(
@@ -315,6 +339,8 @@ async def extract(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
@@ -331,6 +357,8 @@ async def forms(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     include_fill_suggestions: bool = False,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
 ) -> dict:
     """Run the SDK form extraction through the MCP transport."""
     return await sdk_forms(
@@ -345,6 +373,8 @@ async def forms(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
         include_fill_suggestions=include_fill_suggestions,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
     )
 
 
