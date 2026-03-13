@@ -25,6 +25,7 @@ from .browser import (
 from .cache import load_cached_page, save_cached_page
 from .chunking import rank_text_chunks
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
+from .crawl_state import load_crawl_state, save_crawl_state, serialize_frontier
 from .extract import extract_structured_data
 from .forms import extract_forms
 from .google import (
@@ -1491,6 +1492,7 @@ async def map_site(
     proxy_urls: list[str] | None = None,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
+    state_path: str | None = None,
 ) -> dict:
     """Map a site into discovered URLs with optional relevance ordering.
 
@@ -1517,6 +1519,7 @@ async def map_site(
         proxy_urls: Optional proxy URL pool.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
+        state_path: Optional persisted crawl state file.
 
     Returns:
         URL map payload with optional relevance scores.
@@ -1544,6 +1547,7 @@ async def map_site(
         proxy_urls=proxy_urls,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
+        state_path=state_path,
     )
 
     items = []
@@ -1834,6 +1838,7 @@ async def crawl(
     auto_throttle: bool = False,
     minimum_delay_ms: int = 0,
     maximum_delay_ms: int = 5000,
+    state_path: str | None = None,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -1877,6 +1882,7 @@ async def crawl(
         auto_throttle: Whether to adapt delay from observed timings.
         minimum_delay_ms: Lower bound for adaptive delay.
         maximum_delay_ms: Upper bound for adaptive delay.
+        state_path: Optional persisted crawl state file for autosave and resume.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -1901,17 +1907,64 @@ async def crawl(
     }
     sitemap_seeds = []
     allowed_domain_set = normalize_allowed_domains(allowed_domains)
+    resumed_from_state = False
+    loaded_state = load_crawl_state(state_path)
+
+    if loaded_state:
+        resumed_from_state = True
+        start_url = loaded_state.get("start_url", start_url)
+        url = loaded_state.get("input_url", url)
+        visited = set(loaded_state.get("visited", []))
+        results = loaded_state.get("results", [])
+        seen_signatures = loaded_state.get("seen_signatures", {})
+        normalized_budget = loaded_state.get("budget_remaining", normalized_budget)
+        sitemap_seeds = loaded_state.get("sitemap_seeds", [])
+        for item in loaded_state.get("frontier", []):
+            current_url = item.get("url")
+            current_depth = item.get("depth", 0)
+            if not current_url:
+                continue
+            frontier_push(to_visit, current_url, current_depth, strategy=crawl_strategy, query=crawl_query)
+        queued = {item.get("url") for item in loaded_state.get("frontier", []) if item.get("url")}
+
+    def persist_state(completed: bool = False) -> None:
+        """Persist the current crawl state when a state path is configured."""
+        save_crawl_state(
+            state_path,
+            {
+                "version": 1,
+                "completed": completed,
+                "input_url": url,
+                "start_url": start_url,
+                "mode": mode,
+                "crawl_strategy": crawl_strategy,
+                "crawl_query": crawl_query,
+                "max_pages": max_pages,
+                "max_depth": max_depth,
+                "allow_subdomains": allow_subdomains,
+                "allowed_domains": allowed_domains or [],
+                "respect_robots_txt": respect_robots_txt,
+                "state_path": state_path,
+                "frontier": serialize_frontier(to_visit, crawl_strategy),
+                "visited": sorted(visited),
+                "results": results,
+                "seen_signatures": seen_signatures,
+                "budget_remaining": normalized_budget,
+                "sitemap_seeds": sitemap_seeds,
+                "pages_crawled": len(results),
+            },
+        )
 
     request_headers = build_http_headers(user_agent=user_agent, headers=headers)
     async with AsyncSession(impersonate="chrome", timeout=15, headers=request_headers) as session:
-        if consume_crawl_budget(start_url, normalized_budget):
+        if not resumed_from_state and consume_crawl_budget(start_url, normalized_budget):
             queued.add(start_url)
             frontier_push(to_visit, start_url, 0, strategy=crawl_strategy, query=crawl_query)
 
         if respect_robots_txt or seed_sitemap or sitemap_url:
             robots_info = await load_robots_rules(session, start_url, user_agent=user_agent)
 
-        if seed_sitemap or sitemap_url:
+        if not resumed_from_state and (seed_sitemap or sitemap_url):
             candidate_sitemaps = []
             if sitemap_url:
                 candidate_sitemaps.append(sitemap_url)
@@ -1963,6 +2016,8 @@ async def crawl(
                 if consume_crawl_budget(normalized_seed, normalized_budget):
                     queued.add(normalized_seed)
                     frontier_push(to_visit, normalized_seed, 0, strategy=crawl_strategy, query=crawl_query)
+
+        persist_state(completed=False)
 
         while to_visit and len(visited) < max_pages:
             remaining_slots = max_pages - len(visited)
@@ -2083,6 +2138,10 @@ async def crawl(
                 if effective_delay_ms > 0:
                     await asyncio.sleep(effective_delay_ms / 1000)
 
+                persist_state(completed=False)
+
+    persist_state(completed=True)
+
     return {
         "start_url": url,
         "mode": mode,
@@ -2111,6 +2170,8 @@ async def crawl(
         "retry_backoff_ms": retry_backoff_ms,
         "retry_status_codes": retry_status_codes or default_retry_status_codes(),
         "auto_throttle": auto_throttle,
+        "state_path": state_path,
+        "resumed_from_state": resumed_from_state,
         "pages_crawled": len(results),
         "results": results,
     }

@@ -248,6 +248,7 @@ async def map(
     proxy_urls: list[str] | None = None,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
+    state_path: str | None = None,
 ) -> dict:
     """Run the SDK site mapping through the MCP transport."""
     return await sdk_map_site(
@@ -273,6 +274,7 @@ async def map(
         proxy_urls=proxy_urls,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
+        state_path=state_path,
     )
 
 
@@ -492,6 +494,7 @@ async def crawl(
     auto_throttle: bool = False,
     minimum_delay_ms: int = 0,
     maximum_delay_ms: int = 5000,
+    state_path: str | None = None,
     include_headers: bool = False,
     respect_robots_txt: bool = False,
     sitemap_url: str | None = None,
@@ -534,6 +537,7 @@ async def crawl(
         auto_throttle: Whether to adapt delay from observed timings.
         minimum_delay_ms: Lower bound for adaptive delay.
         maximum_delay_ms: Upper bound for adaptive delay.
+        state_path: Optional persisted crawl state file.
         include_headers: Whether to include response headers in results.
         respect_robots_txt: Whether to enforce robots.txt access rules.
         sitemap_url: Optional sitemap URL to seed the crawl.
@@ -577,6 +581,7 @@ async def crawl(
         auto_throttle=auto_throttle,
         minimum_delay_ms=minimum_delay_ms,
         maximum_delay_ms=maximum_delay_ms,
+        state_path=state_path,
         include_headers=include_headers,
         respect_robots_txt=respect_robots_txt,
         sitemap_url=sitemap_url,

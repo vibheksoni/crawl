@@ -202,6 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
     map_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
     map_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    map_parser.add_argument("--state-path", dest="state_path")
     add_common_output_options(map_parser)
 
     extract_parser = subparsers.add_parser("extract", help="Run selector-based structured extraction.")
@@ -311,6 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--cache", action="store_true", dest="cache")
     crawl_parser.add_argument("--cache-dir", dest="cache_dir")
     crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    crawl_parser.add_argument("--state-path", dest="state_path")
     crawl_parser.add_argument("--header", action="append", dest="header_entries")
     crawl_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     crawl_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
@@ -386,6 +388,7 @@ async def run_command(args: argparse.Namespace):
             proxy_urls=args.proxy_urls,
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
+            state_path=args.state_path,
         )
 
     if args.command == "scrape":
@@ -560,6 +563,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            state_path=args.state_path,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
