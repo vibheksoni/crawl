@@ -62,6 +62,13 @@ from .page import (
 )
 from .proxy import normalize_proxy_urls, pick_proxy
 from .scrape import ScrapeFormat, build_scrape_result
+from .similarity import (
+    add_simhash_to_index,
+    compute_simhash,
+    find_simhash_match,
+    format_simhash,
+    parse_simhash,
+)
 from .tech import fingerprint_page, grep_page
 from .searxng import search_searxng
 
@@ -832,6 +839,7 @@ def build_page_result(
     contacts: dict | None = None,
     blocked_reason: str | None = None,
     technologies: dict | None = None,
+    similarity_signature: str | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -873,6 +881,8 @@ def build_page_result(
         "metadata": page_meta["metadata"],
         "signature": signature,
     }
+    if similarity_signature is not None:
+        result["similarity_signature"] = similarity_signature
 
     if "cache_revalidated" in page_data:
         result["cache_revalidated"] = page_data["cache_revalidated"]
@@ -1200,6 +1210,9 @@ async def _fetch_page(
             full_resources=full_resources,
         )
         signature = compute_page_signature(page_data["html"])
+        similarity_text = render_page_content(page_data["html"], "text", only_main_content=True)
+        similarity_value = compute_simhash(similarity_text)
+        similarity_signature = format_simhash(similarity_value) if similarity_value is not None else None
         forms = (
             extract_forms(
                 page_data["html"],
@@ -1238,6 +1251,7 @@ async def _fetch_page(
             "resources": [],
         }
         signature = None
+        similarity_signature = None
         forms = [] if include_forms else None
         app_state = None
         contacts = None
@@ -1260,6 +1274,7 @@ async def _fetch_page(
         contacts=contacts,
         blocked_reason=blocked_reason,
         technologies=technologies,
+        similarity_signature=similarity_signature,
     )
     await run_named_hook(hooks, "on_request_end", result)
     return result, page_meta["links"]
@@ -2484,6 +2499,8 @@ async def crawl(
     proxy_urls: list[str] | None = None,
     full_resources: bool = False,
     dedupe_by_signature: bool = False,
+    dedupe_by_similarity: bool = False,
+    similarity_threshold: int = 3,
     delay_ms: int = 0,
     path_delays: dict[str, int] | None = None,
     include_requests: bool = False,
@@ -2536,6 +2553,8 @@ async def crawl(
         proxy_urls: Optional proxy URL pool.
         full_resources: Whether to include resource URLs in crawl discovery.
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
+        dedupe_by_similarity: Whether to stop expanding near-duplicate-content pages.
+        similarity_threshold: Maximum simhash distance for near-duplicate detection.
         delay_ms: Default crawl delay in milliseconds.
         path_delays: Optional per-path delay mapping in milliseconds.
         include_requests: Whether to capture browser requests.
@@ -2570,6 +2589,8 @@ async def crawl(
     to_visit = [] if crawl_strategy == "best_first" else deque()
     results = []
     seen_signatures = {}
+    similarity_fingerprints = {}
+    similarity_bucket_index = {}
     max_concurrency = max(1, max_concurrency)
     min_concurrency = max(1, min(min_concurrency, max_concurrency))
     robots_info = {
@@ -2604,6 +2625,21 @@ async def crawl(
                 continue
             frontier_push(to_visit, current_url, current_depth, strategy=crawl_strategy, query=crawl_query)
         queued = {item.get("url") for item in loaded_state.get("frontier", []) if item.get("url")}
+
+    for item in results:
+        if item.get("is_near_duplicate"):
+            continue
+        similarity_signature = item.get("similarity_signature")
+        similarity_value = parse_simhash(similarity_signature)
+        representative_url = item.get("final_url") or item.get("url")
+        if representative_url and similarity_value is not None:
+            similarity_fingerprints[representative_url] = similarity_value
+            add_simhash_to_index(
+                representative_url,
+                similarity_value,
+                similarity_bucket_index,
+                max_distance=similarity_threshold,
+            )
 
     def persist_state(completed: bool = False) -> None:
         """Persist the current crawl state when a state path is configured."""
@@ -2795,9 +2831,35 @@ async def crawl(
                     result["is_duplicate"] = True
                 elif signature:
                     seen_signatures[signature] = result["url"]
+
+                similarity_signature = result.get("similarity_signature")
+                similarity_value = parse_simhash(similarity_signature)
+                representative_url = result.get("final_url") or result.get("url")
+                if similarity_value is not None and representative_url and not result.get("is_duplicate"):
+                    similarity_match = find_simhash_match(
+                        similarity_value,
+                        similarity_fingerprints,
+                        similarity_bucket_index,
+                        max_distance=similarity_threshold,
+                    )
+                    if similarity_match and similarity_match[0] != representative_url:
+                        result["is_near_duplicate"] = True
+                        result["near_duplicate_of"] = similarity_match[0]
+                        result["similarity_distance"] = similarity_match[1]
+                    else:
+                        similarity_fingerprints[representative_url] = similarity_value
+                        add_simhash_to_index(
+                            representative_url,
+                            similarity_value,
+                            similarity_bucket_index,
+                            max_distance=similarity_threshold,
+                        )
+
                 results.append(result)
                 await run_named_hook(hooks, "on_result", result)
-                if dedupe_by_signature and result.get("is_duplicate"):
+                if (dedupe_by_signature and result.get("is_duplicate")) or (
+                    dedupe_by_similarity and result.get("is_near_duplicate")
+                ):
                     continue
                 next_depth = result.get("depth", 0) + 1
                 if next_depth > max_depth:
@@ -2902,6 +2964,8 @@ async def crawl(
         "proxy_urls": normalized_proxy_urls,
         "full_resources": full_resources,
         "dedupe_by_signature": dedupe_by_signature,
+        "dedupe_by_similarity": dedupe_by_similarity,
+        "similarity_threshold": similarity_threshold,
         "delay_ms": delay_ms,
         "path_delays": normalized_delay_map,
         "include_requests": include_requests,
@@ -2921,6 +2985,8 @@ async def crawl(
         "include_technologies": include_technologies,
         "technology_aggression": technology_aggression,
         "pages_crawled": len(results),
+        "duplicate_count": sum(1 for item in results if item.get("is_duplicate")),
+        "near_duplicate_count": sum(1 for item in results if item.get("is_near_duplicate")),
         "results": results,
     }
     await run_named_hook(hooks, "on_crawl_end", crawl_result)

@@ -223,6 +223,7 @@ python cli.py fetch-page https://example.com --mode http --cache --cache-ttl 0 -
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80 --include-technologies --technology-aggression 1
+python cli.py crawl https://example.com/docs --mode fast --max-pages 25 --dedupe-by-similarity --similarity-threshold 3
 python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-strategy best_first --crawl-query docs --allow-domain docs.python.org --budget "*=5" --budget "/3/tutorial/=3" --delay-ms 500 --path-delay "/3/tutorial/=1000" --auto-throttle --minimum-delay-ms 200 --maximum-delay-ms 1000 --seed-sitemap --full-resources --dedupe-by-signature --include-requests --interaction-mode auto --session-dir .\\browser-session --respect-robots-txt --cache
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{total}}"
@@ -231,6 +232,7 @@ python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 
 python cli.py dataset-export crawl-results --dataset-dir .\\storage\\datasets --format csv
 python cli.py screenshot https://example.com --output example.jpg
 python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8
+python cli.py benchmark https://example.com/docs --max-pages 20 --samples 3 --concurrency 2 4 8 --dedupe-by-similarity --similarity-threshold 3
 ```
 
 After installation, you can also use:
@@ -252,6 +254,8 @@ Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or
 Crawl queue persistence is also opt-in. If you pass `state_path` in the SDK or `--state-path` in the CLI, the crawler will autosave frontier, visited URLs, budget state, signatures, and accumulated results after each batch and resume from the saved state on the next run.
 
 Autoscaled concurrency is available for long-running HTTP crawls. If you pass `autoscale_concurrency=True` in the SDK or `--autoscale-concurrency` in the CLI, the crawler will adapt batch concurrency between `min_concurrency` and `max_concurrency` based on sampled CPU and memory pressure and include autoscale snapshots in the result payload.
+
+Near-duplicate suppression is available for long-running crawls. If you pass `dedupe_by_similarity=True` in the SDK or `--dedupe-by-similarity` in the CLI/MCP layer, the crawler will compute a main-content simhash for each HTML page, mark near-duplicates with `is_near_duplicate`, `near_duplicate_of`, and `similarity_distance`, and stop expanding them when the distance is within `similarity_threshold`.
 
 SDK users can also pass lightweight lifecycle hooks into `fetch_page()` and `crawl()` using a `hooks` mapping. Supported crawl hook names are `on_crawl_start`, `on_enqueue`, `on_result`, `on_error`, and `on_crawl_end`. Fetch hooks support `on_request_start` and `on_request_end`.
 
@@ -290,11 +294,11 @@ crawl-mcp
 - `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
 - `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
-- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
+- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
 - `crawl`: supports opt-in autoscaled concurrency based on sampled CPU and memory pressure
 - `dataset_export`: exports persisted local datasets as JSON, JSONL, or CSV with union-key CSV support
 - `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
-- `benchmark`: measures the HTTP-only crawler across multiple concurrency settings
+- `benchmark`: measures the HTTP-only crawler across multiple concurrency settings, with optional near-duplicate suppression and stale-cache revalidation
 
 Embedded app-state extraction currently targets JSON-LD blocks, classic hydration containers such as `__NEXT_DATA__` and `__NUXT_DATA__`, streaming Next.js `self.__next_f.push(...)` chunks, and common state assignments such as Redux-, Apollo-, Remix-, and Nuxt-style globals.

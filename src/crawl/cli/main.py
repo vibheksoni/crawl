@@ -403,6 +403,8 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     crawl_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
     crawl_parser.add_argument("--dedupe-by-signature", action="store_true", dest="dedupe_by_signature")
+    crawl_parser.add_argument("--dedupe-by-similarity", action="store_true", dest="dedupe_by_similarity")
+    crawl_parser.add_argument("--similarity-threshold", type=int, default=3, dest="similarity_threshold")
     crawl_parser.add_argument("--include-technologies", action="store_true", dest="include_technologies")
     crawl_parser.add_argument("--technology-aggression", type=int, choices=[1, 2, 3], default=1, dest="technology_aggression")
     crawl_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
@@ -454,6 +456,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=[1, 2, 4],
         dest="concurrency_levels",
     )
+    benchmark_parser.add_argument("--dedupe-by-similarity", action="store_true", dest="dedupe_by_similarity")
+    benchmark_parser.add_argument("--similarity-threshold", type=int, default=3, dest="similarity_threshold")
+    benchmark_parser.add_argument("--cache-revalidate", action="store_true", dest="cache_revalidate")
 
     dataset_export_parser = subparsers.add_parser("dataset-export", help="Export a persisted dataset to JSON, JSONL, or CSV.")
     dataset_export_parser.add_argument("dataset_name", help="Dataset name.")
@@ -772,6 +777,8 @@ async def run_command(args: argparse.Namespace):
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
             dedupe_by_signature=args.dedupe_by_signature,
+            dedupe_by_similarity=args.dedupe_by_similarity,
+            similarity_threshold=args.similarity_threshold,
             include_technologies=args.include_technologies,
             include_requests=args.include_requests,
             interaction_mode=args.interaction_mode,
@@ -819,6 +826,9 @@ async def run_command(args: argparse.Namespace):
             max_pages=args.max_pages,
             concurrency_levels=args.concurrency_levels,
             samples=args.samples,
+            dedupe_by_similarity=args.dedupe_by_similarity,
+            similarity_threshold=args.similarity_threshold,
+            cache_revalidate=args.cache_revalidate,
         )
 
     if args.command == "dataset-export":
