@@ -512,6 +512,9 @@ async def request_page_with_verify_override(
     url: str,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
 ) -> dict:
     """Fetch a page over HTTP with configurable certificate handling.
 
@@ -520,23 +523,48 @@ async def request_page_with_verify_override(
         url: URL to fetch.
         accept_invalid_certs: Whether to skip certificate verification.
         proxy_url: Optional proxy URL.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
 
     Returns:
         Structured HTTP response data.
     """
     started_at = time.perf_counter()
-    try:
-        response = await session.get(
-            url,
-            verify=False if accept_invalid_certs else None,
-            proxy=proxy_url,
-        )
-        ssl_fallback_used = accept_invalid_certs
-    except Exception as error:
-        if accept_invalid_certs or "SSL certificate problem" not in str(error):
-            raise
-        response = await session.get(url, verify=False, proxy=proxy_url)
-        ssl_fallback_used = True
+    response = None
+    ssl_fallback_used = False
+    last_error = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = await session.get(
+                url,
+                verify=False if accept_invalid_certs else None,
+                proxy=proxy_url,
+            )
+            ssl_fallback_used = accept_invalid_certs
+        except Exception as error:
+            last_error = error
+            if not accept_invalid_certs and "SSL certificate problem" in str(error):
+                response = await session.get(url, verify=False, proxy=proxy_url)
+                ssl_fallback_used = True
+            else:
+                if attempt >= max_retries:
+                    raise
+                await asyncio.sleep(compute_backoff_ms(attempt, retry_backoff_ms) / 1000)
+                continue
+
+        if response is not None and should_retry_status(response.status_code, retry_status_codes=retry_status_codes):
+            if attempt >= max_retries:
+                break
+            retry_after_ms = parse_retry_after_ms(normalize_headers(response.headers))
+            delay_ms = retry_after_ms if retry_after_ms is not None else compute_backoff_ms(attempt, retry_backoff_ms)
+            await asyncio.sleep(delay_ms / 1000)
+            continue
+        break
+
+    if response is None and last_error is not None:
+        raise last_error
 
     return {
         "url": url,
@@ -570,6 +598,95 @@ def build_http_headers(
     if user_agent:
         merged["user-agent"] = user_agent
     return merged or None
+
+
+def default_retry_status_codes() -> list[int]:
+    """Return the default HTTP status codes that should be retried."""
+    return [408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524]
+
+
+def parse_retry_after_ms(headers: dict[str, str] | None = None) -> int | None:
+    """Parse a Retry-After header into milliseconds when available.
+
+    Args:
+        headers: Response headers.
+
+    Returns:
+        Delay in milliseconds or ``None``.
+    """
+    if not headers:
+        return None
+    raw_value = headers.get("retry-after")
+    if not raw_value:
+        raw_value = headers.get("Retry-After")
+    if not raw_value:
+        return None
+    try:
+        return max(0, int(float(raw_value) * 1000))
+    except ValueError:
+        return None
+
+
+def should_retry_status(status_code: int | None, retry_status_codes: list[int] | None = None) -> bool:
+    """Determine whether a status code should trigger a retry.
+
+    Args:
+        status_code: HTTP status code.
+        retry_status_codes: Optional retryable status override.
+
+    Returns:
+        ``True`` if the status should be retried.
+    """
+    if status_code is None:
+        return False
+    codes = retry_status_codes or default_retry_status_codes()
+    return status_code in codes
+
+
+def compute_backoff_ms(attempt: int, retry_backoff_ms: int = 500) -> int:
+    """Compute exponential backoff in milliseconds.
+
+    Args:
+        attempt: Zero-based retry attempt.
+        retry_backoff_ms: Base backoff.
+
+    Returns:
+        Backoff duration in milliseconds.
+    """
+    return max(0, retry_backoff_ms) * (2**attempt)
+
+
+def compute_auto_throttle_delay_ms(
+    batch_results: list[dict],
+    minimum_delay_ms: int = 0,
+    maximum_delay_ms: int = 5000,
+) -> int:
+    """Compute a simple adaptive delay from batch timings and retry hints.
+
+    Args:
+        batch_results: Crawl result batch payloads.
+        minimum_delay_ms: Lower bound for the delay.
+        maximum_delay_ms: Upper bound for the delay.
+
+    Returns:
+        Adaptive delay in milliseconds.
+    """
+    elapsed_values = [item.get("elapsed_ms", 0) for item in batch_results if item.get("elapsed_ms")]
+    retry_after_values = [
+        parse_retry_after_ms(item.get("headers"))
+        for item in batch_results
+        if item.get("headers")
+    ]
+    retry_after_values = [value for value in retry_after_values if value is not None]
+
+    delay_ms = minimum_delay_ms
+    if elapsed_values:
+        average_elapsed = sum(elapsed_values) / len(elapsed_values)
+        delay_ms = max(delay_ms, int(average_elapsed * 0.5))
+    if retry_after_values:
+        delay_ms = max(delay_ms, max(retry_after_values))
+
+    return min(maximum_delay_ms, max(minimum_delay_ms, delay_ms))
 
 
 async def request_browser_page(
@@ -734,6 +851,9 @@ async def _fetch_page(
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+    retry_status_codes: list[int] | None = None,
 ) -> tuple[dict, list[str]]:
     """Fetch a page and return normalized details plus discovered links.
 
@@ -765,6 +885,9 @@ async def _fetch_page(
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+        retry_status_codes: Optional retryable status override.
 
     Returns:
         Tuple of page result payload and discovered links.
@@ -818,6 +941,9 @@ async def _fetch_page(
                             url,
                             accept_invalid_certs=accept_invalid_certs,
                             proxy_url=selected_proxy,
+                            max_retries=max_retries,
+                            retry_backoff_ms=retry_backoff_ms,
+                            retry_status_codes=retry_status_codes,
                         )
                 else:
                     page_data = await request_page_with_verify_override(
@@ -825,6 +951,9 @@ async def _fetch_page(
                         url,
                         accept_invalid_certs=accept_invalid_certs,
                         proxy_url=selected_proxy,
+                        max_retries=max_retries,
+                        retry_backoff_ms=retry_backoff_ms,
+                        retry_status_codes=retry_status_codes,
                     )
             except Exception:
                 if mode != "auto":
