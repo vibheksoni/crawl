@@ -83,6 +83,15 @@ def add_common_output_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dataset-name", dest="dataset_name")
 
 
+def add_cache_revalidate_option(parser: argparse.ArgumentParser) -> None:
+    """Add stale-cache revalidation support to a CLI parser.
+
+    Args:
+        parser: Target subparser.
+    """
+    parser.add_argument("--cache-revalidate", action="store_true", dest="cache_revalidate")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -113,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--cache", action="store_true", dest="cache")
     search_parser.add_argument("--cache-dir", dest="cache_dir")
     search_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(search_parser)
     search_parser.add_argument("--user-agent", dest="user_agent")
     search_parser.add_argument("--header", action="append", dest="header_entries")
     search_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -127,6 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(fetch_parser)
     fetch_parser.add_argument("--user-agent", dest="user_agent")
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -150,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(scrape_parser)
     scrape_parser.add_argument("--user-agent", dest="user_agent")
     scrape_parser.add_argument("--header", action="append", dest="header_entries")
     scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -174,6 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     batch_scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     batch_scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(batch_scrape_parser)
     batch_scrape_parser.add_argument("--user-agent", dest="user_agent")
     batch_scrape_parser.add_argument("--header", action="append", dest="header_entries")
     batch_scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -199,6 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--cache", action="store_true", dest="cache")
     map_parser.add_argument("--cache-dir", dest="cache_dir")
     map_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(map_parser)
     map_parser.add_argument("--header", action="append", dest="header_entries")
     map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
@@ -214,6 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--cache", action="store_true", dest="cache")
     extract_parser.add_argument("--cache-dir", dest="cache_dir")
     extract_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(extract_parser)
     extract_parser.add_argument("--user-agent", dest="user_agent")
     extract_parser.add_argument("--header", action="append", dest="header_entries")
     extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -228,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--cache", action="store_true", dest="cache")
     forms_parser.add_argument("--cache-dir", dest="cache_dir")
     forms_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(forms_parser)
     forms_parser.add_argument("--user-agent", dest="user_agent")
     forms_parser.add_argument("--header", action="append", dest="header_entries")
     forms_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -243,6 +259,7 @@ def build_parser() -> argparse.ArgumentParser:
     contacts_parser.add_argument("--cache", action="store_true", dest="cache")
     contacts_parser.add_argument("--cache-dir", dest="cache_dir")
     contacts_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(contacts_parser)
     contacts_parser.add_argument("--user-agent", dest="user_agent")
     contacts_parser.add_argument("--header", action="append", dest="header_entries")
     contacts_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -258,6 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--cache", action="store_true", dest="cache")
     query_parser.add_argument("--cache-dir", dest="cache_dir")
     query_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(query_parser)
     query_parser.add_argument("--user-agent", dest="user_agent")
     query_parser.add_argument("--header", action="append", dest="header_entries")
     query_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -275,6 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_parser.add_argument("--cache", action="store_true", dest="cache")
     tech_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(tech_parser)
     tech_parser.add_argument("--user-agent", dest="user_agent")
     tech_parser.add_argument("--header", action="append", dest="header_entries")
     tech_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -309,6 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_grep_parser.add_argument("--cache", action="store_true", dest="cache")
     tech_grep_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_grep_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(tech_grep_parser)
     tech_grep_parser.add_argument("--user-agent", dest="user_agent")
     tech_grep_parser.add_argument("--header", action="append", dest="header_entries")
     tech_grep_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -329,6 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--cache", action="store_true", dest="cache")
     research_parser.add_argument("--cache-dir", dest="cache_dir")
     research_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(research_parser)
     research_parser.add_argument("--user-agent", dest="user_agent")
     research_parser.add_argument("--header", action="append", dest="header_entries")
     research_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -360,6 +381,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--cache", action="store_true", dest="cache")
     fetch_page_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_page_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(fetch_page_parser)
     fetch_page_parser.add_argument("--user-agent", dest="user_agent")
     fetch_page_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_page_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -407,6 +429,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--cache", action="store_true", dest="cache")
     crawl_parser.add_argument("--cache-dir", dest="cache_dir")
     crawl_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(crawl_parser)
     crawl_parser.add_argument("--state-path", dest="state_path")
     crawl_parser.add_argument("--header", action="append", dest="header_entries")
     crawl_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -470,6 +493,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -485,6 +509,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -502,6 +527,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -518,6 +544,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -536,6 +563,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -571,6 +599,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -592,6 +621,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -609,6 +639,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -635,6 +666,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
@@ -650,6 +682,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -665,6 +698,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -681,6 +715,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -714,6 +749,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
@@ -762,6 +798,7 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
             state_path=args.state_path,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,

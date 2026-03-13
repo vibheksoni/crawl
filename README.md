@@ -219,6 +219,7 @@ python cli.py research "python async browser automation" --provider auto --max-r
 python cli.py fetch https://example.com --format text --mode auto --cache --cache-dir .crawl_cache
 python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250 --include-app-state --include-contacts --include-technologies --technology-aggression 1
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
+python cli.py fetch-page https://example.com --mode http --cache --cache-ttl 0 --cache-revalidate --include-headers
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80 --include-technologies --technology-aggression 1
@@ -240,7 +241,9 @@ crawl-cli --help
 
 If `--provider searxng` is used without `--searxng-url`, the code will look for `SEARXNG_URL` and then fall back to `http://127.0.0.1:8888`.
 
-`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `contacts`, `tech`, `query`, `research`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, blocked-response detection, opportunistic proxy rotation when a proxy pool is supplied, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `contacts`, `tech`, `query`, `research`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, blocked-response detection, opportunistic proxy rotation when a proxy pool is supplied, and SQLite-backed caching via `--cache`, `--cache-dir`, `--cache-ttl`, and `--cache-revalidate`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+
+If you enable `cache_revalidate=True` in the SDK or `--cache-revalidate` in the CLI/MCP layer, stale cached HTTP entries will reuse stored `ETag` and `Last-Modified` validators. A `304 Not Modified` response keeps the cached body, updates response metadata, and marks the result with `cache_revalidated`, `cache_not_modified`, and `revalidation_status_code`.
 
 Most CLI commands can also append normalized row outputs into a local dataset with `--dataset-dir` and `--dataset-name`, then export those persisted rows later with `dataset-export` as JSON, JSONL, or CSV.
 

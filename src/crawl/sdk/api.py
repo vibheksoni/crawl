@@ -23,7 +23,13 @@ from .browser import (
     enable_request_capture,
     perform_basic_interactions,
 )
-from .cache import load_cached_page, save_cached_page
+from .cache import (
+    build_cache_revalidation_headers,
+    is_cache_entry_fresh,
+    load_cache_entry,
+    merge_revalidated_page_data,
+    save_cached_page,
+)
 from .chunking import rank_text_chunks
 from .contacts import extract_contacts_from_html
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
@@ -251,6 +257,7 @@ async def attach_scraped_search_results(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -270,6 +277,7 @@ async def attach_scraped_search_results(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -295,6 +303,7 @@ async def attach_scraped_search_results(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -423,6 +432,7 @@ async def websearch(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -446,6 +456,7 @@ async def websearch(
         cache: Whether to use disk caching for result scraping.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale scraped-result cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override for result scraping.
         headers: Optional extra headers for result scraping.
         accept_invalid_certs: Whether to ignore certificate errors for result scraping.
@@ -502,6 +513,7 @@ async def websearch(
             cache=cache,
             cache_dir=cache_dir,
             cache_ttl_seconds=cache_ttl_seconds,
+            cache_revalidate=cache_revalidate,
             user_agent=user_agent,
             headers=headers,
             accept_invalid_certs=accept_invalid_certs,
@@ -530,6 +542,7 @@ async def request_page(session: AsyncSession, url: str) -> dict:
 async def request_page_with_verify_override(
     session: AsyncSession,
     url: str,
+    headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     max_retries: int = 2,
@@ -541,6 +554,7 @@ async def request_page_with_verify_override(
     Args:
         session: Async HTTP session.
         url: URL to fetch.
+        headers: Optional per-request headers.
         accept_invalid_certs: Whether to skip certificate verification.
         proxy_url: Optional proxy URL.
         max_retries: Maximum retry attempts after the initial request.
@@ -559,6 +573,7 @@ async def request_page_with_verify_override(
         try:
             response = await session.get(
                 url,
+                headers=headers,
                 verify=False if accept_invalid_certs else None,
                 proxy=proxy_url,
             )
@@ -566,7 +581,7 @@ async def request_page_with_verify_override(
         except Exception as error:
             last_error = error
             if not accept_invalid_certs and "SSL certificate problem" in str(error):
-                response = await session.get(url, verify=False, proxy=proxy_url)
+                response = await session.get(url, headers=headers, verify=False, proxy=proxy_url)
                 ssl_fallback_used = True
             else:
                 if attempt >= max_retries:
@@ -618,6 +633,29 @@ def build_http_headers(
     if user_agent:
         merged["user-agent"] = user_agent
     return merged or None
+
+
+def merge_http_headers(
+    base_headers: dict[str, str] | None = None,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, str] | None:
+    """Merge two HTTP header mappings for a single request.
+
+    Args:
+        base_headers: Existing header mapping.
+        extra_headers: Additional headers that should override duplicates.
+
+    Returns:
+        Combined header mapping or ``None``.
+    """
+    if not base_headers and not extra_headers:
+        return None
+    merged = {}
+    if base_headers:
+        merged.update(base_headers)
+    if extra_headers:
+        merged.update(extra_headers)
+    return merged
 
 
 def default_retry_status_codes() -> list[int]:
@@ -836,6 +874,13 @@ def build_page_result(
         "signature": signature,
     }
 
+    if "cache_revalidated" in page_data:
+        result["cache_revalidated"] = page_data["cache_revalidated"]
+    if "cache_not_modified" in page_data:
+        result["cache_not_modified"] = page_data["cache_not_modified"]
+    if "revalidation_status_code" in page_data:
+        result["revalidation_status_code"] = page_data["revalidation_status_code"]
+
     if forms is not None:
         result["forms"] = forms
     if requests is not None:
@@ -873,6 +918,7 @@ async def _fetch_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -912,6 +958,7 @@ async def _fetch_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -946,19 +993,22 @@ async def _fetch_page(
     fallback_used = False
     cache_hit = False
     blocked_reason = None
+    cached_entry = None
+    revalidation_headers = None
 
     if cache:
-        cached_page_data = load_cached_page(
-            url=url,
-            mode=mode,
-            cache_dir=cache_dir,
+        cached_entry = load_cache_entry(url=url, mode=mode, cache_dir=cache_dir)
+        if cached_entry is not None and is_cache_entry_fresh(
+            cached_entry["fetched_at"],
             cache_ttl_seconds=cache_ttl_seconds,
-        )
-        if cached_page_data is not None:
-            page_data = cached_page_data
+        ):
+            page_data = dict(cached_entry["page_data"])
+            page_data["cache_fetched_at"] = cached_entry["fetched_at"]
             source = page_data.get("source", source)
             fallback_used = page_data.get("fallback_used", False)
             cache_hit = True
+        elif cached_entry is not None and cache_revalidate and mode != "browser":
+            revalidation_headers = build_cache_revalidation_headers(cached_entry["page_data"])
 
     if page_data is None:
         await run_named_hook(
@@ -987,6 +1037,7 @@ async def _fetch_page(
         else:
             try:
                 request_headers = build_http_headers(user_agent=user_agent, headers=headers)
+                per_request_headers = merge_http_headers(extra_headers=revalidation_headers)
                 if session is None:
                     async with AsyncSession(
                         impersonate="chrome",
@@ -996,6 +1047,7 @@ async def _fetch_page(
                         page_data = await request_page_with_verify_override(
                             owned_session,
                             url,
+                            headers=per_request_headers,
                             accept_invalid_certs=accept_invalid_certs,
                             proxy_url=selected_proxy,
                             max_retries=max_retries,
@@ -1006,12 +1058,30 @@ async def _fetch_page(
                     page_data = await request_page_with_verify_override(
                         session,
                         url,
+                        headers=per_request_headers,
                         accept_invalid_certs=accept_invalid_certs,
                         proxy_url=selected_proxy,
                         max_retries=max_retries,
                         retry_backoff_ms=retry_backoff_ms,
                         retry_status_codes=retry_status_codes,
                     )
+
+                if (
+                    cached_entry is not None
+                    and revalidation_headers
+                    and page_data.get("status_code") == 304
+                ):
+                    page_data = merge_revalidated_page_data(
+                        cached_entry["page_data"],
+                        page_data,
+                        fetched_at=cached_entry["fetched_at"],
+                    )
+                    cache_hit = True
+                elif cached_entry is not None and revalidation_headers:
+                    page_data["cache_revalidated"] = True
+                    page_data["cache_not_modified"] = False
+                    page_data["revalidation_status_code"] = page_data.get("status_code")
+                    page_data["cache_fetched_at"] = cached_entry["fetched_at"]
 
                 blocked_reason = detect_block_reason(
                     page_data.get("status_code"),
@@ -1033,6 +1103,7 @@ async def _fetch_page(
                                     rotated_data = await request_page_with_verify_override(
                                         rotated_session,
                                         url,
+                                        headers=per_request_headers,
                                         accept_invalid_certs=accept_invalid_certs,
                                         proxy_url=rotated_proxy,
                                         max_retries=0,
@@ -1043,6 +1114,7 @@ async def _fetch_page(
                                 rotated_data = await request_page_with_verify_override(
                                     session,
                                     url,
+                                    headers=per_request_headers,
                                     accept_invalid_certs=accept_invalid_certs,
                                     proxy_url=rotated_proxy,
                                     max_retries=0,
@@ -1205,6 +1277,7 @@ async def fetch_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1241,6 +1314,7 @@ async def fetch_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1278,6 +1352,7 @@ async def fetch_page(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1310,6 +1385,7 @@ async def fetch(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1329,6 +1405,7 @@ async def fetch(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1349,6 +1426,7 @@ async def fetch(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1370,6 +1448,7 @@ async def scrape(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1390,6 +1469,7 @@ async def scrape(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1413,6 +1493,7 @@ async def scrape(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1436,6 +1517,7 @@ async def contacts(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1452,6 +1534,7 @@ async def contacts(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1470,6 +1553,7 @@ async def contacts(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1494,6 +1578,7 @@ async def tech(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1514,6 +1599,7 @@ async def tech(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1541,6 +1627,7 @@ async def tech(
                     cache=cache,
                     cache_dir=cache_dir,
                     cache_ttl_seconds=cache_ttl_seconds,
+                    cache_revalidate=cache_revalidate,
                     user_agent=user_agent,
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
@@ -1582,6 +1669,7 @@ async def tech(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent or "*",
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1617,6 +1705,7 @@ async def tech_grep(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1636,6 +1725,7 @@ async def tech_grep(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1655,6 +1745,7 @@ async def tech_grep(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1683,6 +1774,7 @@ async def batch_scrape(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1704,6 +1796,7 @@ async def batch_scrape(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1730,6 +1823,7 @@ async def batch_scrape(
                     cache=cache,
                     cache_dir=cache_dir,
                     cache_ttl_seconds=cache_ttl_seconds,
+                    cache_revalidate=cache_revalidate,
                     user_agent=user_agent,
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
@@ -1764,6 +1858,7 @@ async def query_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1781,6 +1876,7 @@ async def query_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1801,6 +1897,7 @@ async def query_page(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1893,6 +1990,7 @@ async def research(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -1914,6 +2012,7 @@ async def research(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -1935,6 +2034,7 @@ async def research(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -1954,6 +2054,7 @@ async def research(
                     cache=cache,
                     cache_dir=cache_dir,
                     cache_ttl_seconds=cache_ttl_seconds,
+                    cache_revalidate=cache_revalidate,
                     user_agent=user_agent,
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
@@ -2012,6 +2113,7 @@ async def map_site(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
@@ -2039,6 +2141,7 @@ async def map_site(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
@@ -2067,6 +2170,7 @@ async def map_site(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
@@ -2115,6 +2219,7 @@ async def extract(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -2132,6 +2237,7 @@ async def extract(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -2150,6 +2256,7 @@ async def extract(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -2173,6 +2280,7 @@ async def forms(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -2190,6 +2298,7 @@ async def forms(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -2211,6 +2320,7 @@ async def forms(
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
@@ -2240,6 +2350,7 @@ async def crawl_one_page(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
@@ -2274,6 +2385,7 @@ async def crawl_one_page(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
@@ -2310,6 +2422,7 @@ async def crawl_one_page(
             cache=cache,
             cache_dir=cache_dir,
             cache_ttl_seconds=cache_ttl_seconds,
+            cache_revalidate=cache_revalidate,
             user_agent=user_agent,
             headers=headers,
             accept_invalid_certs=accept_invalid_certs,
@@ -2362,6 +2475,7 @@ async def crawl(
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     allowed_domains: list[str] | None = None,
@@ -2413,6 +2527,7 @@ async def crawl(
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
         headers: Optional extra headers for HTTP and browser fetches.
         accept_invalid_certs: Whether to ignore certificate errors.
         allowed_domains: Additional explicitly allowed domains.
@@ -2649,6 +2764,7 @@ async def crawl(
                         cache=cache,
                         cache_dir=cache_dir,
                         cache_ttl_seconds=cache_ttl_seconds,
+                        cache_revalidate=cache_revalidate,
                         user_agent=user_agent,
                         headers=headers,
                         accept_invalid_certs=accept_invalid_certs,
@@ -2781,6 +2897,7 @@ async def crawl(
         "budget": budget or {},
         "budget_remaining": normalized_budget,
         "cache": cache,
+        "cache_revalidate": cache_revalidate,
         "pattern_mode": pattern_mode,
         "proxy_urls": normalized_proxy_urls,
         "full_resources": full_resources,
