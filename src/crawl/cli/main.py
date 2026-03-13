@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, fetch, fetch_page, map_site, scrape, screenshot, websearch
+from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, map_site, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -51,6 +51,18 @@ def parse_header_entries(entries: list[str] | None) -> dict[str, str] | None:
                 raise ValueError(f"Invalid header entry: {entry}")
         headers[key.strip()] = value.strip()
     return headers
+
+
+def load_json_file(path: str) -> dict:
+    """Load a JSON file from disk.
+
+    Args:
+        path: JSON file path.
+
+    Returns:
+        Parsed JSON object.
+    """
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -160,6 +172,18 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--header", action="append", dest="header_entries")
     map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+
+    extract_parser = subparsers.add_parser("extract", help="Run selector-based structured extraction.")
+    extract_parser.add_argument("url", help="Page URL.")
+    extract_parser.add_argument("--schema-file", required=True, dest="schema_file")
+    extract_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    extract_parser.add_argument("--cache", action="store_true", dest="cache")
+    extract_parser.add_argument("--cache-dir", dest="cache_dir")
+    extract_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    extract_parser.add_argument("--user-agent", dest="user_agent")
+    extract_parser.add_argument("--header", action="append", dest="header_entries")
+    extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    extract_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -325,6 +349,20 @@ async def run_command(args: argparse.Namespace):
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
+        )
+
+    if args.command == "extract":
+        return await extract(
+            args.url,
+            schema=load_json_file(args.schema_file),
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            user_agent=args.user_agent,
             headers=parse_header_entries(args.header_entries),
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
