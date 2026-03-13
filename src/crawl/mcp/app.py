@@ -10,6 +10,7 @@ from crawl.sdk import contacts as sdk_contacts
 from crawl.sdk import fetch as sdk_fetch
 from crawl.sdk import fetch_page as sdk_fetch_page
 from crawl.sdk import batch_scrape as sdk_batch_scrape
+from crawl.sdk import export_dataset as sdk_export_dataset
 from crawl.sdk import extract as sdk_extract
 from crawl.sdk import forms as sdk_forms
 from crawl.sdk import map_site as sdk_map_site
@@ -694,6 +695,22 @@ async def screenshot(url: str, width: int = -1, height: int = -1, full_page: boo
     """
     image_bytes = await sdk_screenshot(url=url, width=width, height=height, full_page=full_page)
     return Image(data=image_bytes)
+
+
+@mcp.tool()
+async def dataset_export(
+    dataset_name: str = "default",
+    dataset_dir: str | None = None,
+    output_format: Literal["json", "jsonl", "csv"] = "json",
+    collect_all_keys: bool = True,
+) -> str:
+    """Export a persisted dataset from local storage."""
+    return sdk_export_dataset(
+        dataset_name=dataset_name,
+        dataset_dir=dataset_dir,
+        output_format=output_format,
+        collect_all_keys=collect_all_keys,
+    )
 
 
 def run() -> None:

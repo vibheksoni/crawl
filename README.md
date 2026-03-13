@@ -211,6 +211,8 @@ python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{total}}"
 python cli.py batch-scrape https://example.com https://www.python.org --format metadata --jsonl --field url --field metadata.title --store-field url
+python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 2 --dataset-dir .\\storage\\datasets --dataset-name crawl-results
+python cli.py dataset-export crawl-results --dataset-dir .\\storage\\datasets --format csv
 python cli.py screenshot https://example.com --output example.jpg
 python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8
 ```
@@ -223,7 +225,9 @@ crawl-cli --help
 
 If `--provider searxng` is used without `--searxng-url`, the code will look for `SEARXNG_URL` and then fall back to `http://127.0.0.1:8888`.
 
-`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `query`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `contacts`, `query`, `research`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+
+Most CLI commands can also append normalized row outputs into a local dataset with `--dataset-dir` and `--dataset-name`, then export those persisted rows later with `dataset-export` as JSON, JSONL, or CSV.
 
 Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or `--session-dir` in the CLI, browser cookies and profile state are reused. If you omit it, browser sessions remain ephemeral.
 
@@ -258,6 +262,7 @@ crawl-mcp
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
+- `dataset_export`: exports persisted local datasets as JSON, JSONL, or CSV with union-key CSV support
 - `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
 - `benchmark`: measures the HTTP-only crawler across multiple concurrency settings
 

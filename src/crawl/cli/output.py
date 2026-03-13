@@ -102,6 +102,10 @@ def normalize_output_rows(result) -> list[dict]:
             return [item for item in result["data"] if isinstance(item, dict)]
         if isinstance(result.get("urls"), list):
             return [item for item in result["urls"] if isinstance(item, dict)]
+        if isinstance(result.get("sources"), list):
+            return [item for item in result["sources"] if isinstance(item, dict)]
+        if isinstance(result.get("merged_chunks"), list):
+            return [item for item in result["merged_chunks"] if isinstance(item, dict)]
         if isinstance(result.get("results"), list):
             return [item for item in result["results"] if isinstance(item, dict)]
         return [result]

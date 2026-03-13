@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import batch_scrape, benchmark_fast_crawl, contacts, crawl, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, screenshot, websearch
+from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, contacts, crawl, export_dataset, extract, fetch, fetch_page, forms, map_site, query_page, research, scrape, screenshot, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -79,6 +79,8 @@ def add_common_output_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-file", dest="output_file")
     parser.add_argument("--store-field", action="append", dest="store_fields")
     parser.add_argument("--store-dir", dest="store_dir")
+    parser.add_argument("--dataset-dir", dest="dataset_dir")
+    parser.add_argument("--dataset-name", dest="dataset_name")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -371,6 +373,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="concurrency_levels",
     )
 
+    dataset_export_parser = subparsers.add_parser("dataset-export", help="Export a persisted dataset to JSON, JSONL, or CSV.")
+    dataset_export_parser.add_argument("dataset_name", help="Dataset name.")
+    dataset_export_parser.add_argument("--dataset-dir", dest="dataset_dir")
+    dataset_export_parser.add_argument("--format", choices=["json", "jsonl", "csv"], default="json", dest="output_format")
+    dataset_export_parser.add_argument("--no-collect-all-keys", action="store_false", dest="collect_all_keys")
+    dataset_export_parser.set_defaults(collect_all_keys=True)
+    dataset_export_parser.add_argument("--output-file", dest="output_file")
+
     return parser
 
 
@@ -655,6 +665,14 @@ async def run_command(args: argparse.Namespace):
             samples=args.samples,
         )
 
+    if args.command == "dataset-export":
+        return export_dataset(
+            dataset_name=args.dataset_name,
+            dataset_dir=args.dataset_dir,
+            output_format=args.output_format,
+            collect_all_keys=args.collect_all_keys,
+        )
+
     raise ValueError(f"Unsupported command: {args.command}")
 
 
@@ -685,6 +703,15 @@ def main() -> int:
             Path(args.output_file).write_text(output_text, encoding="utf-8")
         print(output_text)
         return 0
+
+    if hasattr(args, "dataset_dir") and (args.dataset_dir or args.dataset_name):
+        rows = normalize_output_rows(result)
+        if rows:
+            append_dataset_rows(
+                rows,
+                dataset_name=args.dataset_name or args.command,
+                dataset_dir=args.dataset_dir,
+            )
 
     if args.store_fields:
         store_selected_fields(result, args.store_fields, store_dir=args.store_dir)
