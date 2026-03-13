@@ -1,6 +1,7 @@
 """Reusable SDK operations for web search, fetch, crawl, and screenshot."""
 
 import asyncio
+import heapq
 import io
 import os
 import tempfile
@@ -114,6 +115,72 @@ def score_map_result(item: dict, search: str | None = None) -> float:
         if token in item.get("url", "").lower():
             score += 0.5
     return score
+
+
+def score_url_candidate(url: str, query: str | None = None) -> float:
+    """Score a queued URL candidate for best-first crawling.
+
+    Args:
+        url: Candidate URL.
+        query: Optional crawl relevance query.
+
+    Returns:
+        Candidate score.
+    """
+    if not query:
+        return 0.0
+
+    lowered_url = url.lower()
+    score = 0.0
+    for token in tokenize_query(query):
+        if token in lowered_url:
+            score += 1.0
+        path_parts = lowered_url.replace("-", "/").replace("_", "/")
+        if token in path_parts:
+            score += 0.5
+    return score
+
+
+def frontier_push(
+    frontier,
+    url: str,
+    depth: int,
+    strategy: Literal["bfs", "best_first"] = "bfs",
+    query: str | None = None,
+) -> None:
+    """Push a URL into a crawl frontier.
+
+    Args:
+        frontier: Frontier container.
+        url: URL to enqueue.
+        depth: Crawl depth.
+        strategy: Frontier strategy.
+        query: Optional relevance query.
+    """
+    if strategy == "best_first":
+        score = score_url_candidate(url, query=query)
+        heapq.heappush(frontier, (-score, depth, url))
+    else:
+        frontier.append((url, depth))
+
+
+def frontier_pop(
+    frontier,
+    strategy: Literal["bfs", "best_first"] = "bfs",
+) -> tuple[str, int]:
+    """Pop the next URL from a crawl frontier.
+
+    Args:
+        frontier: Frontier container.
+        strategy: Frontier strategy.
+
+    Returns:
+        URL and depth pair.
+    """
+    if strategy == "best_first":
+        _, depth, url = heapq.heappop(frontier)
+        return url, depth
+    return frontier.popleft()
 
 
 def merge_search_payloads(
@@ -1486,6 +1553,8 @@ async def crawl(
     url: str,
     max_pages: int = 10,
     mode: Literal["fast", "auto", "browser"] = "auto",
+    crawl_strategy: Literal["bfs", "best_first"] = "bfs",
+    crawl_query: str | None = None,
     max_concurrency: int = 4,
     max_depth: int = 2,
     allow_subdomains: bool = False,
@@ -1521,6 +1590,8 @@ async def crawl(
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
         mode: Crawl strategy, either ``fast``, ``auto``, or ``browser``.
+        crawl_strategy: Frontier strategy.
+        crawl_query: Optional relevance query for best-first crawling.
         max_concurrency: Maximum parallel HTTP requests.
         max_depth: Maximum crawl depth from the start URL.
         allow_subdomains: Whether subdomains should be considered in-scope.
@@ -1560,7 +1631,7 @@ async def crawl(
     normalized_delay_map = normalize_delay_map(path_delays)
     normalized_proxy_urls = normalize_proxy_urls(proxy_url=proxy_url, proxy_urls=proxy_urls)
     queued = set()
-    to_visit = deque()
+    to_visit = [] if crawl_strategy == "best_first" else deque()
     results = []
     seen_signatures = {}
     max_concurrency = max(1, max_concurrency)
@@ -1578,7 +1649,7 @@ async def crawl(
     async with AsyncSession(impersonate="chrome", timeout=15, headers=request_headers) as session:
         if consume_crawl_budget(start_url, normalized_budget):
             queued.add(start_url)
-            to_visit.append((start_url, 0))
+            frontier_push(to_visit, start_url, 0, strategy=crawl_strategy, query=crawl_query)
 
         if respect_robots_txt or seed_sitemap or sitemap_url:
             robots_info = await load_robots_rules(session, start_url, user_agent=user_agent)
@@ -1634,7 +1705,7 @@ async def crawl(
                     continue
                 if consume_crawl_budget(normalized_seed, normalized_budget):
                     queued.add(normalized_seed)
-                    to_visit.append((normalized_seed, 0))
+                    frontier_push(to_visit, normalized_seed, 0, strategy=crawl_strategy, query=crawl_query)
 
         while to_visit and len(visited) < max_pages:
             remaining_slots = max_pages - len(visited)
@@ -1642,7 +1713,7 @@ async def crawl(
             batch = []
 
             while to_visit and len(batch) < batch_size:
-                current_url, current_depth = to_visit.popleft()
+                current_url, current_depth = frontier_pop(to_visit, strategy=crawl_strategy)
                 queued.discard(current_url)
                 if current_url in visited:
                     continue
@@ -1715,7 +1786,13 @@ async def crawl(
                     if normalized_link not in visited and normalized_link not in queued:
                         if consume_crawl_budget(normalized_link, normalized_budget):
                             queued.add(normalized_link)
-                            to_visit.append((normalized_link, next_depth))
+                            frontier_push(
+                                to_visit,
+                                normalized_link,
+                                next_depth,
+                                strategy=crawl_strategy,
+                                query=crawl_query,
+                            )
 
             if results:
                 batch_delay_ms = 0
@@ -1740,6 +1817,8 @@ async def crawl(
     return {
         "start_url": url,
         "mode": mode,
+        "crawl_strategy": crawl_strategy,
+        "crawl_query": crawl_query,
         "max_concurrency": max_concurrency,
         "max_depth": max_depth,
         "allow_subdomains": allow_subdomains,

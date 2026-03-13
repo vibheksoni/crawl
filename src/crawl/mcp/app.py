@@ -427,6 +427,8 @@ async def crawl(
     url: str,
     max_pages: int = 10,
     mode: Literal["fast", "auto", "browser"] = "auto",
+    crawl_strategy: Literal["bfs", "best_first"] = "bfs",
+    crawl_query: str | None = None,
     max_concurrency: int = 4,
     max_depth: int = 2,
     allow_subdomains: bool = False,
@@ -462,6 +464,8 @@ async def crawl(
         url: Starting URL to crawl.
         max_pages: Maximum pages to crawl.
         mode: Crawl strategy, either ``fast``, ``auto``, or ``browser``.
+        crawl_strategy: Frontier strategy.
+        crawl_query: Optional relevance query for best-first crawling.
         max_concurrency: Maximum parallel HTTP requests.
         max_depth: Maximum crawl depth from the start URL.
         allow_subdomains: Whether subdomains should be considered in-scope.
@@ -498,6 +502,8 @@ async def crawl(
         url=url,
         max_pages=max_pages,
         mode=mode,
+        crawl_strategy=crawl_strategy,
+        crawl_query=crawl_query,
         max_concurrency=max_concurrency,
         max_depth=max_depth,
         allow_subdomains=allow_subdomains,

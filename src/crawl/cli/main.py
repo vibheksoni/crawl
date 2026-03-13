@@ -5,6 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from crawl.cli.output import normalize_output_rows, render_template, select_fields, store_selected_fields
 from crawl.sdk import batch_scrape, benchmark_fast_crawl, crawl, extract, fetch, fetch_page, forms, map_site, query_page, scrape, screenshot, websearch
 
 
@@ -65,6 +66,20 @@ def load_json_file(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def add_common_output_options(parser: argparse.ArgumentParser) -> None:
+    """Add shared output formatting options to a CLI parser.
+
+    Args:
+        parser: Target subparser.
+    """
+    parser.add_argument("--jsonl", action="store_true", dest="jsonl")
+    parser.add_argument("--field", action="append", dest="output_fields")
+    parser.add_argument("--output-template", dest="output_template")
+    parser.add_argument("--output-file", dest="output_file")
+    parser.add_argument("--store-field", action="append", dest="store_fields")
+    parser.add_argument("--store-dir", dest="store_dir")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -98,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--user-agent", dest="user_agent")
     search_parser.add_argument("--header", action="append", dest="header_entries")
     search_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    add_common_output_options(search_parser)
 
     fetch_parser = subparsers.add_parser("fetch", help="Run the fetch command.")
     fetch_parser.add_argument("url", help="Page URL.")
@@ -110,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     fetch_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(fetch_parser)
 
     scrape_parser = subparsers.add_parser("scrape", help="Run the multi-format scrape command.")
     scrape_parser.add_argument("url", help="Page URL.")
@@ -130,6 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--header", action="append", dest="header_entries")
     scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(scrape_parser)
 
     batch_scrape_parser = subparsers.add_parser("batch-scrape", help="Run the multi-URL scrape command.")
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
@@ -151,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--header", action="append", dest="header_entries")
     batch_scrape_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     batch_scrape_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(batch_scrape_parser)
 
     map_parser = subparsers.add_parser("map", help="Discover URLs within a site.")
     map_parser.add_argument("url", help="Start URL.")
@@ -172,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--header", action="append", dest="header_entries")
     map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(map_parser)
 
     extract_parser = subparsers.add_parser("extract", help="Run selector-based structured extraction.")
     extract_parser.add_argument("url", help="Page URL.")
@@ -184,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--header", action="append", dest="header_entries")
     extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     extract_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(extract_parser)
 
     forms_parser = subparsers.add_parser("forms", help="Extract forms from a page.")
     forms_parser.add_argument("url", help="Page URL.")
@@ -196,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     forms_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
     forms_parser.add_argument("--fill-preview", action="store_true", dest="include_fill_suggestions")
+    add_common_output_options(forms_parser)
 
     query_parser = subparsers.add_parser("query", help="Extract query-relevant content from a page.")
     query_parser.add_argument("url", help="Page URL.")
@@ -208,6 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--header", action="append", dest="header_entries")
     query_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     query_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(query_parser)
 
     fetch_page_parser = subparsers.add_parser("fetch-page", help="Run the structured page fetch command.")
     fetch_page_parser.add_argument("url", help="Page URL.")
@@ -231,11 +254,14 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_page_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     fetch_page_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(fetch_page_parser)
 
     crawl_parser = subparsers.add_parser("crawl", help="Run the crawl command.")
     crawl_parser.add_argument("url", help="Start URL.")
     crawl_parser.add_argument("--max-pages", type=int, default=10, dest="max_pages")
     crawl_parser.add_argument("--mode", choices=["fast", "auto", "browser"], default="auto")
+    crawl_parser.add_argument("--crawl-strategy", choices=["bfs", "best_first"], default="bfs")
+    crawl_parser.add_argument("--crawl-query", dest="crawl_query")
     crawl_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
     crawl_parser.add_argument("--max-depth", type=int, default=2, dest="max_depth")
     crawl_parser.add_argument("--allow-subdomains", action="store_true", dest="allow_subdomains")
@@ -263,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--header", action="append", dest="header_entries")
     crawl_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     crawl_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    add_common_output_options(crawl_parser)
 
     screenshot_parser = subparsers.add_parser("screenshot", help="Run the screenshot command.")
     screenshot_parser.add_argument("url", help="Page URL.")
@@ -458,6 +485,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             max_pages=args.max_pages,
             mode=args.mode,
+            crawl_strategy=args.crawl_strategy,
+            crawl_query=args.crawl_query,
             max_concurrency=args.max_concurrency,
             max_depth=args.max_depth,
             allow_subdomains=args.allow_subdomains,
@@ -528,10 +557,39 @@ def main() -> int:
         return 0
 
     if isinstance(result, str):
-        print(result)
+        output_text = result
+        if args.output_file:
+            Path(args.output_file).write_text(output_text, encoding="utf-8")
+        print(output_text)
         return 0
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if args.store_fields:
+        store_selected_fields(result, args.store_fields, store_dir=args.store_dir)
+
+    if args.output_template:
+        rows = normalize_output_rows(result)
+        rendered = "\n".join(render_template(row, args.output_template) for row in rows)
+        if args.output_file:
+            Path(args.output_file).write_text(rendered, encoding="utf-8")
+        print(rendered)
+        return 0
+
+    if args.output_fields:
+        rows = normalize_output_rows(result)
+        selected_rows = [select_fields(row, args.output_fields) for row in rows]
+        output_data = selected_rows if len(selected_rows) != 1 else selected_rows[0]
+    else:
+        output_data = result
+
+    if args.jsonl:
+        rows = normalize_output_rows(output_data if isinstance(output_data, dict) else {"data": output_data})
+        rendered = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
+    else:
+        rendered = json.dumps(output_data, indent=2, ensure_ascii=False)
+
+    if args.output_file:
+        Path(args.output_file).write_text(rendered, encoding="utf-8")
+    print(rendered)
     return 0
 
 
