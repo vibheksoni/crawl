@@ -38,6 +38,7 @@ from .google import (
 from .page import (
     compute_page_signature,
     consume_crawl_budget,
+    detect_block_reason,
     is_same_scope,
     is_html_content_type,
     matches_patterns_with_mode,
@@ -788,6 +789,7 @@ def build_page_result(
     interactions: list[str] | None = None,
     app_state: dict | None = None,
     contacts: dict | None = None,
+    blocked_reason: str | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -801,6 +803,7 @@ def build_page_result(
         fallback_used: Whether browser fallback was used after HTTP.
         app_state: Optional embedded hydration and structured payloads.
         contacts: Optional extracted contact and social details.
+        blocked_reason: Optional detected block reason.
 
     Returns:
         Normalized page result payload.
@@ -838,6 +841,8 @@ def build_page_result(
         result["app_state"] = app_state
     if contacts is not None:
         result["contacts"] = contacts
+    if blocked_reason is not None:
+        result["blocked_reason"] = blocked_reason
 
     if include_headers:
         result["headers"] = page_data["headers"]
@@ -927,6 +932,7 @@ async def _fetch_page(
     source: Literal["http", "browser"] = "http"
     fallback_used = False
     cache_hit = False
+    blocked_reason = None
 
     if cache:
         cached_page_data = load_cached_page(
@@ -983,6 +989,56 @@ async def _fetch_page(
                         retry_backoff_ms=retry_backoff_ms,
                         retry_status_codes=retry_status_codes,
                     )
+
+                blocked_reason = detect_block_reason(
+                    page_data.get("status_code"),
+                    page_data.get("html", ""),
+                    headers=page_data.get("headers"),
+                )
+                if blocked_reason and len(normalized_proxy_urls) > 1:
+                    for proxy_attempt in range(1, len(normalized_proxy_urls)):
+                        rotated_proxy = pick_proxy(normalized_proxy_urls, proxy_index + proxy_attempt)
+                        if not rotated_proxy or rotated_proxy == selected_proxy:
+                            continue
+                        try:
+                            if session is None:
+                                async with AsyncSession(
+                                    impersonate="chrome",
+                                    timeout=15,
+                                    headers=request_headers,
+                                ) as rotated_session:
+                                    rotated_data = await request_page_with_verify_override(
+                                        rotated_session,
+                                        url,
+                                        accept_invalid_certs=accept_invalid_certs,
+                                        proxy_url=rotated_proxy,
+                                        max_retries=0,
+                                        retry_backoff_ms=retry_backoff_ms,
+                                        retry_status_codes=retry_status_codes,
+                                    )
+                            else:
+                                rotated_data = await request_page_with_verify_override(
+                                    session,
+                                    url,
+                                    accept_invalid_certs=accept_invalid_certs,
+                                    proxy_url=rotated_proxy,
+                                    max_retries=0,
+                                    retry_backoff_ms=retry_backoff_ms,
+                                    retry_status_codes=retry_status_codes,
+                                )
+                        except Exception:
+                            continue
+                        rotated_block_reason = detect_block_reason(
+                            rotated_data.get("status_code"),
+                            rotated_data.get("html", ""),
+                            headers=rotated_data.get("headers"),
+                        )
+                        if rotated_block_reason is None:
+                            page_data = rotated_data
+                            page_data["proxy_rotated"] = True
+                            page_data["proxy_url"] = rotated_proxy
+                            blocked_reason = None
+                            break
             except Exception:
                 if mode != "auto":
                     raise
@@ -1021,11 +1077,19 @@ async def _fetch_page(
                 page_data = browser_data
                 source = "browser"
                 fallback_used = True
+                blocked_reason = detect_block_reason(
+                    page_data.get("status_code"),
+                    page_data.get("html", ""),
+                    headers=page_data.get("headers"),
+                )
 
         page_data["source"] = source
         page_data["fallback_used"] = fallback_used
+        page_data["blocked_reason"] = blocked_reason
         if cache:
             save_cached_page(url=url, mode=mode, page_data=page_data, cache_dir=cache_dir)
+    else:
+        blocked_reason = page_data.get("blocked_reason")
 
     scope_domain = urlparse(page_data["final_url"]).netloc or urlparse(url).netloc
     if is_html_content_type(page_data["content_type"]):
@@ -1088,6 +1152,7 @@ async def _fetch_page(
         interactions=page_data.get("interactions") or None,
         app_state=app_state,
         contacts=contacts,
+        blocked_reason=blocked_reason,
     )
     return result, page_meta["links"]
 

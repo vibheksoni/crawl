@@ -225,7 +225,7 @@ crawl-cli --help
 
 If `--provider searxng` is used without `--searxng-url`, the code will look for `SEARXNG_URL` and then fall back to `http://127.0.0.1:8888`.
 
-`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `contacts`, `query`, `research`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
+`scrape`, `batch-scrape`, `fetch`, `fetch-page`, `crawl`, `map`, `extract`, `forms`, `contacts`, `query`, `research`, and `websearch` support request controls such as repeated `--proxy-url` flags, `--user-agent`, repeated `--header` flags, `--accept-invalid-certs`, retry/backoff controls, adaptive throttling, blocked-response detection, opportunistic proxy rotation when a proxy pool is supplied, and SQLite-backed caching via `--cache`, `--cache-dir`, and `--cache-ttl`. The HTTP runtime path uses `curl_cffi`, and browser-mode flows use `nodriver`.
 
 Most CLI commands can also append normalized row outputs into a local dataset with `--dataset-dir` and `--dataset-name`, then export those persisted rows later with `dataset-export` as JSON, JSONL, or CSV.
 
@@ -258,7 +258,7 @@ crawl-mcp
 - `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
 - `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
-- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
+- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs

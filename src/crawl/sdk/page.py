@@ -620,21 +620,42 @@ def should_browser_fallback(status_code: int | None, html: str, headers: dict[st
     Returns:
         ``True`` when the response likely needs browser rendering or anti-bot bypass.
     """
+    return detect_block_reason(status_code, html, headers=headers) is not None
+
+
+def detect_block_reason(
+    status_code: int | None,
+    html: str,
+    headers: dict[str, str] | None = None,
+) -> str | None:
+    """Detect likely blocking or challenge responses.
+
+    Args:
+        status_code: HTTP status code if available.
+        html: Response body HTML.
+        headers: Optional response headers.
+
+    Returns:
+        Short block reason string or ``None``.
+    """
     if status_code is not None:
         if status_code in FALLBACK_STATUS_CODES or status_code >= 500:
-            return True
+            return f"http_status:{status_code}"
 
     lowered = html.lower()
     if not lowered.strip():
-        return True
-    server_header = (headers or {}).get("server", "").lower()
-    if any(token in server_header for token in ("cloudflare", "akamai", "imperva", "ddos-guard")):
-        if any(marker in lowered for marker in ("captcha", "forbidden", "access denied", "just a moment", "verify")):
-            return True
-    if any(marker in lowered for marker in FALLBACK_HTML_MARKERS):
-        return True
+        return "empty_body"
 
-    return False
+    server_header = (headers or {}).get("server", "").lower()
+    for token in ("cloudflare", "akamai", "imperva", "ddos-guard"):
+        if token in server_header and any(marker in lowered for marker in ("captcha", "forbidden", "access denied", "just a moment", "verify")):
+            return f"server_challenge:{token}"
+
+    for marker in FALLBACK_HTML_MARKERS:
+        if marker in lowered:
+            return f"body_marker:{marker}"
+
+    return None
 
 
 def render_page_content(
