@@ -207,6 +207,7 @@ python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
+python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80
 python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-strategy best_first --crawl-query docs --allow-domain docs.python.org --budget "*=5" --budget "/3/tutorial/=3" --delay-ms 500 --path-delay "/3/tutorial/=1000" --auto-throttle --minimum-delay-ms 200 --maximum-delay-ms 1000 --seed-sitemap --full-resources --dedupe-by-signature --include-requests --interaction-mode auto --session-dir .\\browser-session --respect-robots-txt --cache
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{total}}"
@@ -232,6 +233,8 @@ Most CLI commands can also append normalized row outputs into a local dataset wi
 Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or `--session-dir` in the CLI, browser cookies and profile state are reused. If you omit it, browser sessions remain ephemeral.
 
 Crawl queue persistence is also opt-in. If you pass `state_path` in the SDK or `--state-path` in the CLI, the crawler will autosave frontier, visited URLs, budget state, signatures, and accumulated results after each batch and resume from the saved state on the next run.
+
+Autoscaled concurrency is available for long-running HTTP crawls. If you pass `autoscale_concurrency=True` in the SDK or `--autoscale-concurrency` in the CLI, the crawler will adapt batch concurrency between `min_concurrency` and `max_concurrency` based on sampled CPU and memory pressure and include autoscale snapshots in the result payload.
 
 ## MCP Usage
 
@@ -262,6 +265,7 @@ crawl-mcp
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by signature, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
+- `crawl`: supports opt-in autoscaled concurrency based on sampled CPU and memory pressure
 - `dataset_export`: exports persisted local datasets as JSON, JSONL, or CSV with union-key CSV support
 - `screenshot`: captures a page and returns JPEG bytes from the SDK while the CLI writes them to disk
 - `benchmark`: measures the HTTP-only crawler across multiple concurrency settings

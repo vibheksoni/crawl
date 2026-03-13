@@ -335,6 +335,10 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
     crawl_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     crawl_parser.add_argument("--auto-throttle", action="store_true", dest="auto_throttle")
+    crawl_parser.add_argument("--autoscale-concurrency", action="store_true", dest="autoscale_concurrency")
+    crawl_parser.add_argument("--min-concurrency", type=int, default=1, dest="min_concurrency")
+    crawl_parser.add_argument("--cpu-target-percent", type=float, default=75.0, dest="cpu_target_percent")
+    crawl_parser.add_argument("--memory-target-percent", type=float, default=80.0, dest="memory_target_percent")
     crawl_parser.add_argument("--minimum-delay-ms", type=int, default=0, dest="minimum_delay_ms")
     crawl_parser.add_argument("--maximum-delay-ms", type=int, default=5000, dest="maximum_delay_ms")
     crawl_parser.add_argument("--include-headers", action="store_true", dest="include_headers")
@@ -630,6 +634,10 @@ async def run_command(args: argparse.Namespace):
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
             auto_throttle=args.auto_throttle,
+            autoscale_concurrency=args.autoscale_concurrency,
+            min_concurrency=args.min_concurrency,
+            cpu_target_percent=args.cpu_target_percent,
+            memory_target_percent=args.memory_target_percent,
             minimum_delay_ms=args.minimum_delay_ms,
             maximum_delay_ms=args.maximum_delay_ms,
             include_headers=args.include_headers,

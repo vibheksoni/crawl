@@ -572,6 +572,10 @@ async def crawl(
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     auto_throttle: bool = False,
+    autoscale_concurrency: bool = False,
+    min_concurrency: int = 1,
+    cpu_target_percent: float = 75.0,
+    memory_target_percent: float = 80.0,
     minimum_delay_ms: int = 0,
     maximum_delay_ms: int = 5000,
     state_path: str | None = None,
@@ -615,6 +619,10 @@ async def crawl(
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         auto_throttle: Whether to adapt delay from observed timings.
+        autoscale_concurrency: Whether to adapt concurrency from system load.
+        min_concurrency: Lower bound for autoscaled concurrency.
+        cpu_target_percent: Preferred CPU ceiling for autoscaling.
+        memory_target_percent: Preferred memory ceiling for autoscaling.
         minimum_delay_ms: Lower bound for adaptive delay.
         maximum_delay_ms: Upper bound for adaptive delay.
         state_path: Optional persisted crawl state file.
@@ -659,6 +667,10 @@ async def crawl(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
         auto_throttle=auto_throttle,
+        autoscale_concurrency=autoscale_concurrency,
+        min_concurrency=min_concurrency,
+        cpu_target_percent=cpu_target_percent,
+        memory_target_percent=memory_target_percent,
         minimum_delay_ms=minimum_delay_ms,
         maximum_delay_ms=maximum_delay_ms,
         state_path=state_path,

@@ -15,6 +15,7 @@ from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
 from .app_state import extract_app_state, render_app_state_text
+from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
     collect_request_capture,
@@ -2131,6 +2132,10 @@ async def crawl(
     minimum_delay_ms: int = 0,
     maximum_delay_ms: int = 5000,
     state_path: str | None = None,
+    autoscale_concurrency: bool = False,
+    min_concurrency: int = 1,
+    cpu_target_percent: float = 75.0,
+    memory_target_percent: float = 80.0,
 ) -> dict:
     """Crawl a site using a browser-assisted or HTTP-only strategy.
 
@@ -2175,6 +2180,10 @@ async def crawl(
         minimum_delay_ms: Lower bound for adaptive delay.
         maximum_delay_ms: Upper bound for adaptive delay.
         state_path: Optional persisted crawl state file for autosave and resume.
+        autoscale_concurrency: Whether to adapt concurrency from system load.
+        min_concurrency: Lower bound for autoscaled concurrency.
+        cpu_target_percent: Preferred CPU ceiling for autoscaling.
+        memory_target_percent: Preferred memory ceiling for autoscaling.
 
     Returns:
         Crawled URL metadata and crawl statistics.
@@ -2190,6 +2199,7 @@ async def crawl(
     results = []
     seen_signatures = {}
     max_concurrency = max(1, max_concurrency)
+    min_concurrency = max(1, min(min_concurrency, max_concurrency))
     robots_info = {
         "robots_url": None,
         "parser": None,
@@ -2201,6 +2211,8 @@ async def crawl(
     allowed_domain_set = normalize_allowed_domains(allowed_domains)
     resumed_from_state = False
     loaded_state = load_crawl_state(state_path)
+    current_concurrency = max_concurrency if not autoscale_concurrency else min_concurrency
+    autoscale_snapshots = []
 
     if loaded_state:
         resumed_from_state = True
@@ -2211,6 +2223,8 @@ async def crawl(
         seen_signatures = loaded_state.get("seen_signatures", {})
         normalized_budget = loaded_state.get("budget_remaining", normalized_budget)
         sitemap_seeds = loaded_state.get("sitemap_seeds", [])
+        current_concurrency = int(loaded_state.get("current_concurrency", current_concurrency))
+        autoscale_snapshots = loaded_state.get("autoscale_snapshots", [])
         for item in loaded_state.get("frontier", []):
             current_url = item.get("url")
             current_depth = item.get("depth", 0)
@@ -2244,6 +2258,8 @@ async def crawl(
                 "budget_remaining": normalized_budget,
                 "sitemap_seeds": sitemap_seeds,
                 "pages_crawled": len(results),
+                "current_concurrency": current_concurrency,
+                "autoscale_snapshots": autoscale_snapshots,
             },
         )
 
@@ -2313,7 +2329,8 @@ async def crawl(
 
         while to_visit and len(visited) < max_pages:
             remaining_slots = max_pages - len(visited)
-            batch_size = min(max_concurrency, remaining_slots)
+            batch_concurrency = current_concurrency if autoscale_concurrency else max_concurrency
+            batch_size = min(batch_concurrency, remaining_slots)
             batch = []
 
             while to_visit and len(batch) < batch_size:
@@ -2430,6 +2447,29 @@ async def crawl(
                 if effective_delay_ms > 0:
                     await asyncio.sleep(effective_delay_ms / 1000)
 
+                if autoscale_concurrency:
+                    load_snapshot = sample_system_load()
+                    next_concurrency, decision = choose_autoscaled_concurrency(
+                        current_concurrency=current_concurrency,
+                        min_concurrency=min_concurrency,
+                        max_concurrency=max_concurrency,
+                        cpu_percent=load_snapshot["cpu_percent"],
+                        memory_percent=load_snapshot["memory_percent"],
+                        cpu_target_percent=cpu_target_percent,
+                        memory_target_percent=memory_target_percent,
+                    )
+                    autoscale_snapshots.append(
+                        {
+                            "pages_crawled": len(results),
+                            "batch_size": batch_size,
+                            "cpu_percent": load_snapshot["cpu_percent"],
+                            "memory_percent": load_snapshot["memory_percent"],
+                            "decision": decision,
+                            "next_concurrency": next_concurrency,
+                        }
+                    )
+                    current_concurrency = next_concurrency
+
                 persist_state(completed=False)
 
     persist_state(completed=True)
@@ -2464,6 +2504,12 @@ async def crawl(
         "auto_throttle": auto_throttle,
         "state_path": state_path,
         "resumed_from_state": resumed_from_state,
+        "autoscale_concurrency": autoscale_concurrency,
+        "min_concurrency": min_concurrency,
+        "current_concurrency": current_concurrency,
+        "cpu_target_percent": cpu_target_percent,
+        "memory_target_percent": memory_target_percent,
+        "autoscale_snapshots": autoscale_snapshots,
         "pages_crawled": len(results),
         "results": results,
     }
