@@ -5,6 +5,7 @@ from typing import Literal
 from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 
+from crawl.sdk import article as sdk_article
 from crawl.sdk import crawl as sdk_crawl
 from crawl.sdk import contacts as sdk_contacts
 from crawl.sdk import fetch as sdk_fetch
@@ -40,7 +41,7 @@ async def websearch(
     proxy_urls: list[str] | None = None,
     scrape_results: bool = False,
     scrape_limit: int = 3,
-    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies"]] | None = None,
+    scrape_formats: list[Literal["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies", "article"]] | None = None,
     only_main_content: bool = True,
     cache: bool = False,
     cache_dir: str | None = None,
@@ -160,7 +161,7 @@ async def fetch(
 @mcp.tool()
 async def scrape(
     url: str,
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -202,7 +203,7 @@ async def scrape(
 @mcp.tool()
 async def batch_scrape(
     urls: list[str],
-    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"]] | None = None,
+    formats: list[Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"]] | None = None,
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
@@ -444,6 +445,40 @@ async def forms(
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
         include_fill_suggestions=include_fill_suggestions,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+
+
+@mcp.tool()
+async def article(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Run the SDK article extraction through the MCP transport."""
+    return await sdk_article(
+        url=url,
+        mode=mode,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )

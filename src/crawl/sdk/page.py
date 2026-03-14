@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from .article import extract_article_content
+
 FALLBACK_STATUS_CODES = {403, 429, 503, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530}
 FALLBACK_HTML_MARKERS = (
     "__cf_bm",
@@ -541,6 +543,13 @@ def extract_content_soup(html: str, only_main_content: bool = True):
         tag.decompose()
 
     if only_main_content:
+        article = extract_article_content(html)
+        if article["html"] and len(article["text"]) >= 120:
+            article_soup = BeautifulSoup(article["html"], "html.parser")
+            target = article_soup.find(["article", "main", "section", "div", "body"])
+            if target and target.get_text(" ", strip=True):
+                return target
+
         for tag in soup(["header", "footer", "nav", "aside", "form"]):
             tag.decompose()
 

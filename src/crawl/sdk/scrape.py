@@ -2,10 +2,11 @@
 
 from typing import Literal
 
+from .article import extract_article_content
 from .chunking import rank_text_chunks
 from .page import extract_links_from_html, render_clean_html, render_page_content
 
-ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"]
+ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"]
 
 
 def build_scrape_result(
@@ -27,6 +28,7 @@ def build_scrape_result(
     """
     requested_formats = formats or ["markdown"]
     html = page_result.get("html", "")
+    article_payload = extract_article_content(html) if only_main_content else None
     result = {
         "url": page_result["final_url"],
         "metadata": page_result.get("metadata", {}),
@@ -62,12 +64,16 @@ def build_scrape_result(
         result["contacts"] = page_result.get("contacts", {})
     if "technologies" in requested_formats:
         result["technologies"] = page_result.get("technologies", {})
+    if "article" in requested_formats:
+        result["article"] = article_payload or extract_article_content(html)
     if "fit_markdown" in requested_formats:
-        markdown = render_page_content(
-            html,
-            output_format="markdown",
-            only_main_content=only_main_content,
-        )
+        markdown = result.get("markdown")
+        if markdown is None:
+            markdown = render_page_content(
+                html,
+                output_format="markdown",
+                only_main_content=only_main_content,
+            )
         ranked = rank_text_chunks(markdown, query or "", strategy="sliding", chunk_size=120, overlap=30, top_k=5)
         result["fit_markdown"] = "\n\n---\n\n".join(item["text"] for item in ranked)
         result["fit_chunks"] = ranked

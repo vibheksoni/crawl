@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
+from crawl.sdk import append_dataset_rows, article, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
     search_parser.add_argument(
         "--scrape-format",
-        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies"],
+        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies", "article"],
         action="append",
         dest="scrape_formats",
     )
@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("url", help="Page URL.")
     scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"],
         action="append",
         dest="formats",
     )
@@ -174,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
     batch_scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"],
         action="append",
         dest="formats",
     )
@@ -252,6 +252,21 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
     forms_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
     add_common_output_options(forms_parser)
+
+    article_parser = subparsers.add_parser("article", help="Extract readable article content from a page.")
+    article_parser.add_argument("url", help="Page URL.")
+    article_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    article_parser.add_argument("--cache", action="store_true", dest="cache")
+    article_parser.add_argument("--cache-dir", dest="cache_dir")
+    article_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
+    add_cache_revalidate_option(article_parser)
+    article_parser.add_argument("--user-agent", dest="user_agent")
+    article_parser.add_argument("--header", action="append", dest="header_entries")
+    article_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
+    article_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
+    article_parser.add_argument("--max-retries", type=int, default=2, dest="max_retries")
+    article_parser.add_argument("--retry-backoff-ms", type=int, default=500, dest="retry_backoff_ms")
+    add_common_output_options(article_parser)
 
     feeds_parser = subparsers.add_parser("feeds", help="Discover RSS, Atom, RDF, or JSON feeds for a site.")
     feeds_parser.add_argument("url", help="Start URL.")
@@ -728,6 +743,22 @@ async def run_command(args: argparse.Namespace):
             accept_invalid_certs=args.accept_invalid_certs,
             proxy_urls=args.proxy_urls,
             include_fill_suggestions=args.include_fill_suggestions,
+            max_retries=args.max_retries,
+            retry_backoff_ms=args.retry_backoff_ms,
+        )
+
+    if args.command == "article":
+        return await article(
+            args.url,
+            mode=args.mode,
+            cache=args.cache,
+            cache_dir=args.cache_dir,
+            cache_ttl_seconds=args.cache_ttl_seconds,
+            cache_revalidate=args.cache_revalidate,
+            user_agent=args.user_agent,
+            headers=parse_header_entries(args.header_entries),
+            accept_invalid_certs=args.accept_invalid_certs,
+            proxy_urls=args.proxy_urls,
             max_retries=args.max_retries,
             retry_backoff_ms=args.retry_backoff_ms,
         )

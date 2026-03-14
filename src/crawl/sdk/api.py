@@ -16,6 +16,7 @@ from curl_cffi.requests import AsyncSession
 from PIL import Image as PILImage
 
 from .app_state import extract_app_state, render_app_state_text
+from .article import extract_article_content
 from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
@@ -2351,6 +2352,64 @@ async def forms(
         "metadata": page.get("metadata", {}),
         "forms": page.get("forms", []),
         "count": len(page.get("forms", [])),
+    }
+
+
+async def article(
+    url: str,
+    mode: Literal["auto", "http", "browser"] = "auto",
+    cache: bool = False,
+    cache_dir: str | None = None,
+    cache_ttl_seconds: int | None = None,
+    cache_revalidate: bool = False,
+    user_agent: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_invalid_certs: bool = False,
+    proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    max_retries: int = 2,
+    retry_backoff_ms: int = 500,
+) -> dict:
+    """Extract readable article content from a page.
+
+    Args:
+        url: URL to inspect.
+        mode: Fetch strategy.
+        cache: Whether to use disk caching.
+        cache_dir: Optional cache directory.
+        cache_ttl_seconds: Optional cache TTL.
+        cache_revalidate: Whether stale cache entries should be conditionally revalidated.
+        user_agent: Optional user-agent override.
+        headers: Optional extra headers.
+        accept_invalid_certs: Whether to ignore certificate errors.
+        proxy_url: Optional single proxy URL.
+        proxy_urls: Optional proxy URL pool.
+        max_retries: Maximum retry attempts after the initial request.
+        retry_backoff_ms: Base retry backoff in milliseconds.
+
+    Returns:
+        Readable article payload with cleaned content.
+    """
+    page = await fetch_page(
+        url=url,
+        mode=mode,
+        include_html=True,
+        cache=cache,
+        cache_dir=cache_dir,
+        cache_ttl_seconds=cache_ttl_seconds,
+        cache_revalidate=cache_revalidate,
+        user_agent=user_agent,
+        headers=headers,
+        accept_invalid_certs=accept_invalid_certs,
+        proxy_url=proxy_url,
+        proxy_urls=proxy_urls,
+        max_retries=max_retries,
+        retry_backoff_ms=retry_backoff_ms,
+    )
+    return {
+        "url": page["final_url"],
+        "metadata": page.get("metadata", {}),
+        "article": extract_article_content(page.get("html", "")),
     }
 
 
