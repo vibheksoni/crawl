@@ -111,6 +111,8 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -147,6 +149,8 @@ async def fetch(
         url=url,
         output_format=output_format,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -172,6 +176,8 @@ async def scrape(
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -196,6 +202,8 @@ async def scrape(
         article_max_pages=article_max_pages,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -223,6 +231,8 @@ async def batch_scrape(
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -247,6 +257,8 @@ async def batch_scrape(
         article_max_pages=article_max_pages,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -322,6 +334,8 @@ async def query(
     url: str,
     query: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -339,6 +353,8 @@ async def query(
         url=url,
         query=query,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -402,6 +418,8 @@ async def extract(
     url: str,
     schema: dict,
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -419,6 +437,8 @@ async def extract(
         url=url,
         schema=schema,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -437,6 +457,8 @@ async def extract(
 async def forms(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -454,6 +476,8 @@ async def forms(
     return await sdk_forms(
         url=url,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -475,6 +499,8 @@ async def article(
     mode: Literal["auto", "http", "browser"] = "auto",
     follow_pagination: bool = False,
     max_pages: int = 3,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -493,6 +519,8 @@ async def article(
         mode=mode,
         follow_pagination=follow_pagination,
         max_pages=max_pages,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -553,6 +581,8 @@ async def feeds(
 async def contacts(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -569,6 +599,8 @@ async def contacts(
     return await sdk_contacts(
         url=url,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -590,6 +622,8 @@ async def tech(
     max_pages: int = 1,
     max_depth: int = 0,
     allow_subdomains: bool = False,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -610,6 +644,8 @@ async def tech(
         max_pages=max_pages,
         max_depth=max_depth,
         allow_subdomains=allow_subdomains,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -654,6 +690,8 @@ async def tech_grep(
     regex: str | None = None,
     search: str = "body",
     mode: Literal["auto", "http", "browser"] = "auto",
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -673,6 +711,8 @@ async def tech_grep(
         regex=regex,
         search=search,
         mode=mode,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -701,6 +741,8 @@ async def fetch_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -734,6 +776,8 @@ async def fetch_page(
         pattern_mode: Pattern matching mode.
         full_resources: Whether to include resource URLs in discovery.
         include_requests: Whether to capture browser requests.
+        consent_mode: Consent/banner handling mode.
+        max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -770,6 +814,8 @@ async def fetch_page(
         include_api_payloads=include_api_payloads,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
@@ -816,6 +862,8 @@ async def crawl(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -866,6 +914,8 @@ async def crawl(
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
         include_technologies: Whether to extract technology fingerprints for each page.
         include_requests: Whether to capture browser requests.
+        consent_mode: Consent/banner handling mode.
+        max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -921,6 +971,8 @@ async def crawl(
         include_api_payloads=include_api_payloads,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
@@ -955,7 +1007,14 @@ async def crawl(
 
 
 @mcp.tool()
-async def screenshot(url: str, width: int = -1, height: int = -1, full_page: bool = True) -> Image:
+async def screenshot(
+    url: str,
+    width: int = -1,
+    height: int = -1,
+    full_page: bool = True,
+    consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
+    max_consent_actions: int = 2,
+) -> Image:
     """Run the SDK screenshot operation through the MCP transport.
 
     Args:
@@ -963,11 +1022,20 @@ async def screenshot(url: str, width: int = -1, height: int = -1, full_page: boo
         width: Requested viewport width, or ``-1`` for auto.
         height: Requested viewport height, or ``-1`` for auto.
         full_page: Whether to capture the full page.
+        consent_mode: Consent/banner handling mode.
+        max_consent_actions: Maximum consent or overlay actions to perform.
 
     Returns:
         JPEG-compressed screenshot image.
     """
-    image_bytes = await sdk_screenshot(url=url, width=width, height=height, full_page=full_page)
+    image_bytes = await sdk_screenshot(
+        url=url,
+        width=width,
+        height=height,
+        full_page=full_page,
+        consent_mode=consent_mode,
+        max_consent_actions=max_consent_actions,
+    )
     return Image(data=image_bytes)
 
 

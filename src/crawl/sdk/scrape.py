@@ -38,6 +38,8 @@ def build_scrape_result(
         "source": page_result.get("source"),
         "cache_hit": page_result.get("cache_hit", False),
     }
+    if page_result.get("consent_actions") is not None:
+        result["consent_actions"] = page_result.get("consent_actions", [])
 
     if "markdown" in requested_formats:
         result["markdown"] = render_page_content(

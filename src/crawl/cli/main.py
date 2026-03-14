@@ -92,6 +92,16 @@ def add_cache_revalidate_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cache-revalidate", action="store_true", dest="cache_revalidate")
 
 
+def add_consent_options(parser: argparse.ArgumentParser) -> None:
+    """Add consent handling options to a CLI parser.
+
+    Args:
+        parser: Target subparser.
+    """
+    parser.add_argument("--consent-mode", choices=["none", "auto", "reject", "accept", "close"], default="none", dest="consent_mode")
+    parser.add_argument("--max-consent-actions", type=int, default=2, dest="max_consent_actions")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -138,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(fetch_parser)
+    add_consent_options(fetch_parser)
     fetch_parser.add_argument("--user-agent", dest="user_agent")
     fetch_parser.add_argument("--header", action="append", dest="header_entries")
     fetch_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -162,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_consent_options(scrape_parser)
     scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -191,6 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     batch_scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     batch_scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_consent_options(batch_scrape_parser)
     batch_scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     batch_scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     batch_scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -237,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--cache-dir", dest="cache_dir")
     extract_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(extract_parser)
+    add_consent_options(extract_parser)
     extract_parser.add_argument("--user-agent", dest="user_agent")
     extract_parser.add_argument("--header", action="append", dest="header_entries")
     extract_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -252,6 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--cache-dir", dest="cache_dir")
     forms_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(forms_parser)
+    add_consent_options(forms_parser)
     forms_parser.add_argument("--user-agent", dest="user_agent")
     forms_parser.add_argument("--header", action="append", dest="header_entries")
     forms_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -270,6 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     article_parser.add_argument("--cache-dir", dest="cache_dir")
     article_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(article_parser)
+    add_consent_options(article_parser)
     article_parser.add_argument("--user-agent", dest="user_agent")
     article_parser.add_argument("--header", action="append", dest="header_entries")
     article_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -304,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     contacts_parser.add_argument("--cache-dir", dest="cache_dir")
     contacts_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(contacts_parser)
+    add_consent_options(contacts_parser)
     contacts_parser.add_argument("--user-agent", dest="user_agent")
     contacts_parser.add_argument("--header", action="append", dest="header_entries")
     contacts_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -320,6 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--cache-dir", dest="cache_dir")
     query_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(query_parser)
+    add_consent_options(query_parser)
     query_parser.add_argument("--user-agent", dest="user_agent")
     query_parser.add_argument("--header", action="append", dest="header_entries")
     query_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -338,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(tech_parser)
+    add_consent_options(tech_parser)
     tech_parser.add_argument("--user-agent", dest="user_agent")
     tech_parser.add_argument("--header", action="append", dest="header_entries")
     tech_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -373,6 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_grep_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_grep_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(tech_grep_parser)
+    add_consent_options(tech_grep_parser)
     tech_grep_parser.add_argument("--user-agent", dest="user_agent")
     tech_grep_parser.add_argument("--header", action="append", dest="header_entries")
     tech_grep_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -414,6 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
     fetch_page_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     fetch_page_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_consent_options(fetch_page_parser)
     fetch_page_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     fetch_page_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     fetch_page_parser.add_argument("--session-dir", dest="session_dir")
@@ -458,6 +479,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
     crawl_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     crawl_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_consent_options(crawl_parser)
     crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     crawl_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     crawl_parser.add_argument("--session-dir", dest="session_dir")
@@ -493,6 +515,7 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot_parser.add_argument("--width", type=int, default=-1)
     screenshot_parser.add_argument("--height", type=int, default=-1)
     screenshot_parser.add_argument("--no-full-page", action="store_true", dest="no_full_page")
+    add_consent_options(screenshot_parser)
     screenshot_parser.add_argument("--output", default="screenshot.jpg", help="Output image path.")
 
     benchmark_parser = subparsers.add_parser("benchmark", help="Benchmark the HTTP-only crawler.")
@@ -569,6 +592,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             output_format=args.output_format,
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -591,6 +616,8 @@ async def run_command(args: argparse.Namespace):
             article_max_pages=args.article_max_pages,
             max_api_payloads=args.max_api_payloads,
             max_api_payload_bytes=args.max_api_payload_bytes,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -608,6 +635,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             args.query,
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -627,6 +656,8 @@ async def run_command(args: argparse.Namespace):
             max_pages=args.max_pages,
             max_depth=args.max_depth,
             allow_subdomains=args.allow_subdomains,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -663,6 +694,8 @@ async def run_command(args: argparse.Namespace):
             regex=args.regex,
             search=args.search,
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -707,6 +740,8 @@ async def run_command(args: argparse.Namespace):
             article_max_pages=args.article_max_pages,
             max_api_payloads=args.max_api_payloads,
             max_api_payload_bytes=args.max_api_payload_bytes,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -750,6 +785,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             schema=load_json_file(args.schema_file),
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -766,6 +803,8 @@ async def run_command(args: argparse.Namespace):
         return await forms(
             args.url,
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -785,6 +824,8 @@ async def run_command(args: argparse.Namespace):
             mode=args.mode,
             follow_pagination=args.follow_pagination,
             max_pages=args.max_pages,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -821,6 +862,8 @@ async def run_command(args: argparse.Namespace):
         return await contacts(
             args.url,
             mode=args.mode,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -847,6 +890,8 @@ async def run_command(args: argparse.Namespace):
             include_api_payloads=args.include_api_payloads,
             max_api_payloads=args.max_api_payloads,
             max_api_payload_bytes=args.max_api_payload_bytes,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
@@ -891,6 +936,8 @@ async def run_command(args: argparse.Namespace):
             include_api_payloads=args.include_api_payloads,
             max_api_payloads=args.max_api_payloads,
             max_api_payload_bytes=args.max_api_payload_bytes,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
@@ -928,6 +975,8 @@ async def run_command(args: argparse.Namespace):
             width=args.width,
             height=args.height,
             full_page=not args.no_full_page,
+            consent_mode=args.consent_mode,
+            max_consent_actions=args.max_consent_actions,
         )
 
     if args.command == "benchmark":

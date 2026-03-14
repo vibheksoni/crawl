@@ -2,14 +2,38 @@
 
 import asyncio
 import base64
+import io
 import json
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
 
 import nodriver as uc
 import nodriver.cdp.network as network_cdp
 import nodriver.cdp.page as page_cdp
 import nodriver.cdp.security as security_cdp
+import nodriver.core.util as nodriver_util
+
+from .consent import (
+    CANDIDATE_SELECTOR,
+    DIRECT_ACTION_SELECTORS,
+    build_consent_context_text,
+    build_overlay_removal_script,
+    get_action_sequence,
+    is_consent_context,
+    score_consent_label,
+)
+
+
+def suppress_nodriver_cleanup_output() -> None:
+    """Silence nodriver temp-profile cleanup prints that break JSON CLI output."""
+    if getattr(nodriver_util, "__crawl_cleanup_print_suppressed__", False):
+        return
+    nodriver_util.print = lambda *args, **kwargs: None
+    nodriver_util.__crawl_cleanup_print_suppressed__ = True
+
+
+suppress_nodriver_cleanup_output()
+
 
 def build_capture_script(
     capture_payloads: bool = False,
@@ -346,7 +370,9 @@ async def kill_browser(browser) -> None:
     try:
         for tab in browser.tabs:
             await tab.close()
-        browser.stop()
+        with redirect_stdout(io.StringIO()):
+            browser.stop()
+            await asyncio.sleep(0.5)
     except Exception:
         pass
 
@@ -409,7 +435,6 @@ async def browser_session(
             except Exception:
                 pass
         await kill_browser(browser)
-        await asyncio.sleep(0.5)
 
 
 async def enable_request_capture(
@@ -501,6 +526,201 @@ async def collect_api_payload_capture(page) -> list[dict]:
         return json.loads(payload)
     except json.JSONDecodeError:
         return []
+
+
+def get_element_text_candidates(element) -> list[str]:
+    """Collect possible visible/action labels from an element.
+
+    Args:
+        element: Browser element wrapper.
+
+    Returns:
+        Candidate text values.
+    """
+    attrs = getattr(element, "attrs", {}) or {}
+    return [
+        getattr(element, "text_all", "") or "",
+        attrs.get("value", "") or "",
+        attrs.get("aria-label", "") or "",
+        attrs.get("title", "") or "",
+        attrs.get("name", "") or "",
+    ]
+
+
+async def click_browser_element(element) -> bool:
+    """Click a browser element using the safest available fallback.
+
+    Args:
+        element: Browser element wrapper.
+
+    Returns:
+        ``True`` when the click succeeds.
+    """
+    try:
+        await element.click()
+        return True
+    except Exception as error:
+        message = str(error).lower()
+        if "cannot find context with specified id" in message or "execution context was destroyed" in message:
+            return True
+        try:
+            await element.mouse_click()
+            return True
+        except Exception as mouse_error:
+            mouse_message = str(mouse_error).lower()
+            if "cannot find context with specified id" in mouse_message or "execution context was destroyed" in mouse_message:
+                return True
+            return False
+
+
+async def clear_consent_overlays(page) -> int:
+    """Remove consent-related overlays and restore page scrolling.
+
+    Args:
+        page: Browser page/tab.
+
+    Returns:
+        Number of removed nodes reported by the page script.
+    """
+    try:
+        removed = await page.evaluate(build_overlay_removal_script(), return_by_value=True)
+    except Exception:
+        return 0
+    try:
+        return int(removed or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def find_direct_consent_candidate(page, action: str):
+    """Find the first consent candidate using direct CMP selectors.
+
+    Args:
+        page: Browser page/tab.
+        action: Consent action name.
+
+    Returns:
+        Matching element and selector, or ``(None, None)``.
+    """
+    selectors = DIRECT_ACTION_SELECTORS.get(action, [])
+    if not selectors:
+        return None, None
+    selector_query = ", ".join(selectors)
+    try:
+        elements = await page.select_all(selector_query, timeout=0.25, include_frames=True)
+    except Exception:
+        return None, None
+    if elements:
+        return elements[0], selector_query
+    return None, None
+
+
+async def find_generic_consent_candidate(page, action: str):
+    """Find the best consent button candidate using text/context heuristics.
+
+    Args:
+        page: Browser page/tab.
+        action: Consent action name.
+
+    Returns:
+        Matching element and visible label, or ``(None, None)``.
+    """
+    try:
+        elements = await page.select_all(CANDIDATE_SELECTOR, timeout=0.25, include_frames=True)
+    except Exception:
+        return None, None
+    scored = []
+    for element in elements:
+        attrs = getattr(element, "attrs", {}) or {}
+        labels = [label for label in get_element_text_candidates(element) if label]
+        if not labels:
+            continue
+        label = max(labels, key=len)
+        context_text = build_consent_context_text(label, attrs)
+        score = score_consent_label(label, action)
+        if score <= 0:
+            continue
+        if not is_consent_context(context_text) and score < 100:
+            continue
+        scored.append((score, len(label), element, label))
+
+    if not scored:
+        return None, None
+    scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    _, _, element, label = scored[0]
+    return element, label
+
+
+async def handle_consent_dialogs(
+    page,
+    consent_mode: str = "none",
+    max_actions: int = 2,
+    delay_ms: int = 700,
+) -> list[dict]:
+    """Dismiss or interact with cookie/consent dialogs and overlays.
+
+    Args:
+        page: Browser page/tab.
+        consent_mode: Consent handling mode.
+        max_actions: Maximum number of click/removal actions to perform.
+        delay_ms: Delay between actions in milliseconds.
+
+    Returns:
+        List of performed consent/overlay actions.
+    """
+    actions = []
+    if consent_mode == "none":
+        return actions
+
+    try:
+        removed = await clear_consent_overlays(page)
+        if removed:
+            actions.append({"action": "remove_overlay", "removed": removed, "strategy": "dom"})
+            if len(actions) >= max_actions:
+                return actions
+
+        for action in get_action_sequence(consent_mode):
+            if len(actions) >= max_actions:
+                break
+
+            try:
+                element, selector = await find_direct_consent_candidate(page, action)
+                label = None
+                strategy = "selector"
+                if element is None:
+                    element, label = await find_generic_consent_candidate(page, action)
+                    strategy = "text"
+                if element is None:
+                    continue
+
+                if label is None:
+                    labels = [value for value in get_element_text_candidates(element) if value]
+                    label = max(labels, key=len) if labels else action
+
+                clicked = await click_browser_element(element)
+                if not clicked:
+                    continue
+                actions.append(
+                    {
+                        "action": action,
+                        "label": label,
+                        "strategy": strategy,
+                        "selector": selector,
+                    }
+                )
+                await page.sleep(delay_ms / 1000)
+
+                removed = await clear_consent_overlays(page)
+                if removed and len(actions) < max_actions:
+                    actions.append({"action": "remove_overlay", "removed": removed, "strategy": "dom"})
+                if action != "settings":
+                    break
+            except Exception:
+                continue
+    except Exception:
+        return actions[:max_actions]
+
+    return actions[:max_actions]
 
 
 async def perform_basic_interactions(page, max_clicks: int = 3, delay_ms: int = 1000) -> list[str]:
