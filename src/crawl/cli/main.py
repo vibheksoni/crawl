@@ -158,6 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--include-full-page", action="store_false", dest="only_main_content")
     scrape_parser.set_defaults(only_main_content=True)
     scrape_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    scrape_parser.add_argument("--follow-pagination", action="store_true", dest="follow_pagination")
+    scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -183,6 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.set_defaults(only_main_content=True)
     batch_scrape_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
     batch_scrape_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
+    batch_scrape_parser.add_argument("--follow-pagination", action="store_true", dest="follow_pagination")
+    batch_scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     batch_scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     batch_scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     batch_scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -256,6 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     article_parser = subparsers.add_parser("article", help="Extract readable article content from a page.")
     article_parser.add_argument("url", help="Page URL.")
     article_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
+    article_parser.add_argument("--follow-pagination", action="store_true", dest="follow_pagination")
+    article_parser.add_argument("--max-pages", type=int, default=3, dest="max_pages")
     article_parser.add_argument("--cache", action="store_true", dest="cache")
     article_parser.add_argument("--cache-dir", dest="cache_dir")
     article_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -563,6 +569,8 @@ async def run_command(args: argparse.Namespace):
             formats=args.formats,
             only_main_content=args.only_main_content,
             mode=args.mode,
+            follow_pagination=args.follow_pagination,
+            article_max_pages=args.article_max_pages,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -675,6 +683,8 @@ async def run_command(args: argparse.Namespace):
             only_main_content=args.only_main_content,
             mode=args.mode,
             max_concurrency=args.max_concurrency,
+            follow_pagination=args.follow_pagination,
+            article_max_pages=args.article_max_pages,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -751,6 +761,8 @@ async def run_command(args: argparse.Namespace):
         return await article(
             args.url,
             mode=args.mode,
+            follow_pagination=args.follow_pagination,
+            max_pages=args.max_pages,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,

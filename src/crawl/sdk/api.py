@@ -18,6 +18,7 @@ from PIL import Image as PILImage
 from .app_state import extract_app_state, render_app_state_text
 from .article import extract_article_content
 from .article_metadata import extract_article_metadata
+from .article_pagination import discover_next_page_candidates, titles_look_related
 from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
@@ -1464,6 +1465,8 @@ async def scrape(
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
+    follow_pagination: bool = False,
+    article_max_pages: int = 3,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -1485,6 +1488,8 @@ async def scrape(
         only_main_content: Whether to prefer main content.
         query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
+        follow_pagination: Whether article extraction should follow likely next-page links.
+        article_max_pages: Maximum article pages to merge when pagination is enabled.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -1522,12 +1527,32 @@ async def scrape(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
-    return build_scrape_result(
+    scrape_result = build_scrape_result(
         page,
         formats=formats,
         only_main_content=only_main_content,
         query=query,
     )
+    if formats and "article" in formats and follow_pagination:
+        article_result = await article(
+            url=url,
+            mode=mode,
+            follow_pagination=True,
+            max_pages=article_max_pages,
+            cache=cache,
+            cache_dir=cache_dir,
+            cache_ttl_seconds=cache_ttl_seconds,
+            cache_revalidate=cache_revalidate,
+            user_agent=user_agent,
+            headers=headers,
+            accept_invalid_certs=accept_invalid_certs,
+            proxy_url=proxy_url,
+            proxy_urls=proxy_urls,
+            max_retries=max_retries,
+            retry_backoff_ms=retry_backoff_ms,
+        )
+        scrape_result["article"] = article_result["article"]
+    return scrape_result
 
 
 async def contacts(
@@ -1790,6 +1815,8 @@ async def batch_scrape(
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
     max_concurrency: int = 4,
+    follow_pagination: bool = False,
+    article_max_pages: int = 3,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -1812,6 +1839,8 @@ async def batch_scrape(
         query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
         max_concurrency: Maximum concurrent scrape tasks.
+        follow_pagination: Whether article extraction should follow likely next-page links.
+        article_max_pages: Maximum article pages to merge when pagination is enabled.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -1839,6 +1868,8 @@ async def batch_scrape(
                     only_main_content=only_main_content,
                     query=query,
                     mode=mode,
+                    follow_pagination=follow_pagination,
+                    article_max_pages=article_max_pages,
                     cache=cache,
                     cache_dir=cache_dir,
                     cache_ttl_seconds=cache_ttl_seconds,
@@ -2359,6 +2390,8 @@ async def forms(
 async def article(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    follow_pagination: bool = False,
+    max_pages: int = 3,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -2376,6 +2409,8 @@ async def article(
     Args:
         url: URL to inspect.
         mode: Fetch strategy.
+        follow_pagination: Whether to follow likely next-page links for split articles.
+        max_pages: Maximum article pages to merge.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -2391,6 +2426,7 @@ async def article(
     Returns:
         Readable article payload with cleaned content.
     """
+    max_pages = max(1, max_pages)
     page = await fetch_page(
         url=url,
         mode=mode,
@@ -2407,11 +2443,135 @@ async def article(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
-    article_payload = extract_article_content(page.get("html", ""))
-    article_payload["metadata"] = extract_article_metadata(
-        page.get("html", ""),
-        article_text=article_payload.get("text", ""),
+    def build_article_payload(page_result: dict) -> dict:
+        payload = extract_article_content(page_result.get("html", ""))
+        payload["metadata"] = extract_article_metadata(
+            page_result.get("html", ""),
+            article_text=payload.get("text", ""),
+        )
+        return payload
+
+    article_payload = build_article_payload(page)
+    page_entries = [
+        {
+            "url": page["final_url"],
+            "title": article_payload["metadata"].get("title") or page.get("title", ""),
+            "score": article_payload.get("score", 0.0),
+            "excerpt": article_payload.get("excerpt", ""),
+            "text_length": len(article_payload.get("text", "")),
+            "metadata": article_payload["metadata"],
+        }
+    ]
+    seen_urls = {page["final_url"]}
+    seen_signatures = set()
+    merged_texts = [article_payload.get("text", "")]
+    merged_html_segments = [article_payload.get("html", "")]
+    pagination_stop_reason = None
+    base_title = article_payload["metadata"].get("title") or page.get("title", "")
+    base_canonical_url = article_payload["metadata"].get("canonical_url") or page["final_url"]
+    first_signature = compute_simhash(article_payload.get("text", ""))
+    if first_signature is not None:
+        seen_signatures.add(first_signature)
+
+    current_page = page
+    while follow_pagination and len(page_entries) < max_pages:
+        candidates = discover_next_page_candidates(
+            current_page.get("html", ""),
+            current_page["final_url"],
+            canonical_url=base_canonical_url,
+        )
+        candidates = [candidate for candidate in candidates if candidate["url"] not in seen_urls]
+        if not candidates:
+            pagination_stop_reason = "no_candidate"
+            break
+
+        next_candidate = candidates[0]
+        next_page = await fetch_page(
+            url=next_candidate["url"],
+            mode=mode,
+            include_html=True,
+            cache=cache,
+            cache_dir=cache_dir,
+            cache_ttl_seconds=cache_ttl_seconds,
+            cache_revalidate=cache_revalidate,
+            user_agent=user_agent,
+            headers=headers,
+            accept_invalid_certs=accept_invalid_certs,
+            proxy_url=proxy_url,
+            proxy_urls=proxy_urls,
+            max_retries=max_retries,
+            retry_backoff_ms=retry_backoff_ms,
+        )
+        next_payload = build_article_payload(next_page)
+        next_text = next_payload.get("text", "")
+        if len(next_text) < 60:
+            pagination_stop_reason = "short_or_empty_page"
+            break
+        if not titles_look_related(base_title, next_payload["metadata"].get("title", "")):
+            pagination_stop_reason = "different_article_title"
+            break
+
+        next_signature = compute_simhash(next_text)
+        if next_signature is not None and next_signature in seen_signatures:
+            pagination_stop_reason = "duplicate_page"
+            break
+        if any(next_text in existing_text or existing_text in next_text for existing_text in merged_texts if existing_text):
+            pagination_stop_reason = "duplicate_page"
+            break
+
+        seen_urls.add(next_page["final_url"])
+        if next_signature is not None:
+            seen_signatures.add(next_signature)
+        merged_texts.append(next_text)
+        merged_html_segments.append(next_payload.get("html", ""))
+        page_entries.append(
+            {
+                "url": next_page["final_url"],
+                "title": next_payload["metadata"].get("title") or next_page.get("title", ""),
+                "score": next_payload.get("score", 0.0),
+                "excerpt": next_payload.get("excerpt", ""),
+                "text_length": len(next_text),
+                "pagination_score": next_candidate["score"],
+                "metadata": next_payload["metadata"],
+            }
+        )
+        current_page = next_page
+
+    if follow_pagination and pagination_stop_reason is None and len(page_entries) >= max_pages:
+        pagination_stop_reason = "max_pages"
+
+    if len(page_entries) > 1:
+        article_payload["text"] = "\n\n".join(text for text in merged_texts if text)
+        article_payload["html"] = "\n<hr data-page-break=\"true\" />\n".join(
+            segment for segment in merged_html_segments if segment
+        )
+        article_payload["metadata"]["reading_time_minutes"] = max(
+            1,
+            round(len(article_payload["text"].split()) / 220),
+        )
+
+    for page_entry in page_entries[1:]:
+        page_metadata = page_entry["metadata"]
+        if not article_payload["metadata"].get("date_modified") and page_metadata.get("date_modified"):
+            article_payload["metadata"]["date_modified"] = page_metadata["date_modified"]
+        if not article_payload["metadata"].get("image") and page_metadata.get("image"):
+            article_payload["metadata"]["image"] = page_metadata["image"]
+        if not article_payload["metadata"].get("section") and page_metadata.get("section"):
+            article_payload["metadata"]["section"] = page_metadata["section"]
+        article_payload["metadata"]["authors"] = list(
+            dict.fromkeys(article_payload["metadata"].get("authors", []) + page_metadata.get("authors", []))
+        )
+        article_payload["metadata"]["keywords"] = list(
+            dict.fromkeys(article_payload["metadata"].get("keywords", []) + page_metadata.get("keywords", []))
+        )
+
+    article_payload["metadata"]["author"] = (
+        article_payload["metadata"]["authors"][0] if article_payload["metadata"].get("authors") else ""
     )
+    article_payload["page_count"] = len(page_entries)
+    article_payload["pages"] = page_entries
+    article_payload["pagination_followed"] = len(page_entries) > 1
+    article_payload["pagination_stop_reason"] = pagination_stop_reason
     return {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
