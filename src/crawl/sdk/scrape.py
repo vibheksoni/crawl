@@ -38,6 +38,10 @@ def build_scrape_result(
         "source": page_result.get("source"),
         "cache_hit": page_result.get("cache_hit", False),
     }
+    if page_result.get("blocked_resources") is not None:
+        result["blocked_resources"] = page_result.get("blocked_resources", {})
+    if page_result.get("network_idle") is not None:
+        result["network_idle"] = page_result.get("network_idle", {})
     if page_result.get("consent_actions") is not None:
         result["consent_actions"] = page_result.get("consent_actions", [])
 

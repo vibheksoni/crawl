@@ -4,10 +4,12 @@ import asyncio
 import base64
 import io
 import json
+import time
 from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
 
 import nodriver as uc
+import nodriver.cdp.fetch as fetch_cdp
 import nodriver.cdp.network as network_cdp
 import nodriver.cdp.page as page_cdp
 import nodriver.cdp.security as security_cdp
@@ -21,6 +23,11 @@ from .consent import (
     get_action_sequence,
     is_consent_context,
     score_consent_label,
+)
+from .resource_blocking import (
+    normalize_blocked_url_patterns,
+    resolve_blocked_resource_type_names,
+    resource_type_name_to_cdp,
 )
 
 
@@ -398,6 +405,264 @@ async def configure_page_request_settings(
         await page.send(network_cdp.set_extra_http_headers(network_cdp.Headers.from_json(headers)))
     if user_agent:
         await page.send(network_cdp.set_user_agent_override(user_agent=user_agent))
+
+
+def get_resource_blocking_stats(page) -> dict | None:
+    """Return configured browser resource blocking stats for a page.
+
+    Args:
+        page: Browser page/tab.
+
+    Returns:
+        Resource blocking summary or ``None`` when disabled.
+    """
+    summary = getattr(page, "__crawl_resource_blocking_summary", None)
+    if not summary:
+        return None
+    return {
+        "resource_mode": summary.get("resource_mode", "none"),
+        "blocked_resource_types": list(summary.get("blocked_resource_types", [])),
+        "blocked_url_patterns": list(summary.get("blocked_url_patterns", [])),
+        "bypass_service_worker": bool(summary.get("bypass_service_worker", False)),
+        "blocked_counts": dict(summary.get("blocked_counts", {})),
+        "blocked_samples": list(summary.get("blocked_samples", [])),
+    }
+
+
+async def configure_page_resource_blocking(
+    page,
+    resource_mode: str = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
+    max_blocked_samples: int = 50,
+) -> dict | None:
+    """Configure browser-side resource blocking for a page.
+
+    Args:
+        page: Browser page/tab.
+        resource_mode: Named resource blocking preset.
+        blocked_resource_types: Optional resource types to block.
+        blocked_url_patterns: Optional URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
+        max_blocked_samples: Maximum blocked request samples to retain.
+
+    Returns:
+        Resource blocking summary or ``None`` when no blocking is configured.
+    """
+    resolved_resource_types = resolve_blocked_resource_type_names(
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+    )
+    resolved_url_patterns = normalize_blocked_url_patterns(blocked_url_patterns)
+    if not resolved_resource_types and not resolved_url_patterns and not bypass_service_worker:
+        return None
+
+    await page.send(network_cdp.enable())
+    if bypass_service_worker:
+        await page.send(network_cdp.set_bypass_service_worker(True))
+    if resolved_url_patterns:
+        await page.send(network_cdp.set_blocked_ur_ls(urls=resolved_url_patterns))
+
+    summary = {
+        "resource_mode": resource_mode,
+        "blocked_resource_types": resolved_resource_types,
+        "blocked_url_patterns": resolved_url_patterns,
+        "bypass_service_worker": bypass_service_worker,
+        "blocked_counts": {},
+        "blocked_samples": [],
+    }
+    page.__crawl_resource_blocking_summary = summary
+
+    if resolved_resource_types:
+        blocked_type_values = {
+            resource_type_name_to_cdp(value): value for value in resolved_resource_types
+        }
+        page.__crawl_blocked_resource_type_values = blocked_type_values
+
+        previous_handler = getattr(page, "__crawl_resource_block_handler", None)
+        if previous_handler is not None:
+            try:
+                page.remove_handler(fetch_cdp.RequestPaused, previous_handler)
+            except Exception:
+                pass
+
+        async def request_paused_handler(event: fetch_cdp.RequestPaused) -> None:
+            try:
+                resource_name = blocked_type_values.get(event.resource_type)
+                if resource_name is None:
+                    await page.send(fetch_cdp.continue_request(event.request_id))
+                    return
+                counts = summary["blocked_counts"]
+                counts[resource_name] = counts.get(resource_name, 0) + 1
+                samples = summary["blocked_samples"]
+                if len(samples) < max(1, max_blocked_samples):
+                    samples.append(
+                        {
+                            "resource_type": resource_name,
+                            "url": event.request.url,
+                        }
+                    )
+                await page.send(
+                    fetch_cdp.fail_request(
+                        event.request_id,
+                        network_cdp.ErrorReason.BLOCKED_BY_CLIENT,
+                    )
+                )
+            except Exception:
+                try:
+                    await page.send(fetch_cdp.continue_request(event.request_id))
+                except Exception:
+                    pass
+
+        page.__crawl_resource_block_handler = request_paused_handler
+        page.add_handler(fetch_cdp.RequestPaused, request_paused_handler)
+        await page.send(
+            fetch_cdp.enable(
+                patterns=[
+                    fetch_cdp.RequestPattern(resource_type=value)
+                    for value in blocked_type_values
+                ]
+            )
+        )
+
+    return get_resource_blocking_stats(page)
+
+
+def should_track_network_idle_request(
+    url: str,
+    resource_type: network_cdp.ResourceType | None = None,
+) -> bool:
+    """Check whether a request should contribute to network-idle tracking.
+
+    Args:
+        url: Request URL.
+        resource_type: Optional request resource type.
+
+    Returns:
+        ``True`` when the request should count toward pending network activity.
+    """
+    if not url or url.startswith(("data:", "blob:", "about:")):
+        return False
+    if resource_type in {network_cdp.ResourceType.WEB_SOCKET, network_cdp.ResourceType.EVENT_SOURCE}:
+        return False
+    return True
+
+
+async def start_network_idle_tracking(page) -> None:
+    """Start tracking pending browser network activity on a page.
+
+    Args:
+        page: Browser page/tab.
+    """
+    await page.send(network_cdp.enable())
+    last_activity = time.perf_counter()
+    pending_requests = set()
+
+    async def request_will_be_sent_handler(event: network_cdp.RequestWillBeSent) -> None:
+        nonlocal last_activity
+        if not should_track_network_idle_request(event.request.url, event.type_):
+            return
+        pending_requests.add(str(event.request_id))
+        last_activity = time.perf_counter()
+
+    async def loading_finished_handler(event: network_cdp.LoadingFinished) -> None:
+        nonlocal last_activity
+        pending_requests.discard(str(event.request_id))
+        last_activity = time.perf_counter()
+
+    async def loading_failed_handler(event: network_cdp.LoadingFailed) -> None:
+        nonlocal last_activity
+        pending_requests.discard(str(event.request_id))
+        last_activity = time.perf_counter()
+
+    page.__crawl_network_idle_state = {
+        "pending_requests": pending_requests,
+        "last_activity": lambda: last_activity,
+        "handlers": {
+            "request": request_will_be_sent_handler,
+            "finished": loading_finished_handler,
+            "failed": loading_failed_handler,
+        },
+    }
+    page.add_handler(network_cdp.RequestWillBeSent, request_will_be_sent_handler)
+    page.add_handler(network_cdp.LoadingFinished, loading_finished_handler)
+    page.add_handler(network_cdp.LoadingFailed, loading_failed_handler)
+
+
+async def stop_network_idle_tracking(page) -> None:
+    """Remove network-idle tracking handlers from a page.
+
+    Args:
+        page: Browser page/tab.
+    """
+    state = getattr(page, "__crawl_network_idle_state", None)
+    if not state:
+        return
+    handlers = state.get("handlers", {})
+    try:
+        page.remove_handler(network_cdp.RequestWillBeSent, handlers.get("request"))
+    except Exception:
+        pass
+    try:
+        page.remove_handler(network_cdp.LoadingFinished, handlers.get("finished"))
+    except Exception:
+        pass
+    try:
+        page.remove_handler(network_cdp.LoadingFailed, handlers.get("failed"))
+    except Exception:
+        pass
+    page.__crawl_network_idle_state = None
+
+
+async def wait_for_page_network_idle(
+    page,
+    idle_ms: int = 700,
+    timeout_ms: int = 2500,
+) -> dict:
+    """Wait until the page network becomes idle or a timeout elapses.
+
+    Args:
+        page: Browser page/tab.
+        idle_ms: Required quiet time in milliseconds.
+        timeout_ms: Maximum total wait time in milliseconds.
+
+    Returns:
+        Network-idle wait summary.
+    """
+    state = getattr(page, "__crawl_network_idle_state", None)
+    if not state:
+        return {
+            "idle_ms": idle_ms,
+            "timeout_ms": timeout_ms,
+            "timed_out": False,
+            "pending_requests": 0,
+        }
+
+    deadline = time.perf_counter() + (max(0, timeout_ms) / 1000)
+    quiet_seconds = max(0, idle_ms) / 1000
+    timed_out = False
+    try:
+        while True:
+            now = time.perf_counter()
+            pending_requests = state["pending_requests"]
+            last_activity = state["last_activity"]()
+            if not pending_requests and now - last_activity >= quiet_seconds:
+                break
+            if now >= deadline:
+                timed_out = True
+                break
+            await page.sleep(0.1)
+    finally:
+        pending_count = len(state["pending_requests"])
+        await stop_network_idle_tracking(page)
+
+    return {
+        "idle_ms": idle_ms,
+        "timeout_ms": timeout_ms,
+        "timed_out": timed_out,
+        "pending_requests": pending_count,
+    }
 
 
 @asynccontextmanager

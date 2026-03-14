@@ -155,6 +155,7 @@ async def main() -> None:
         "https://www.python.org",
         mode="browser",
         include_requests=True,
+        resource_mode="safe",
         consent_mode="auto",
         interaction_mode="auto",
         max_interactions=1,
@@ -217,7 +218,7 @@ python cli.py websearch "python async browser automation" --max-results 5 --page
 python cli.py websearch "python async browser automation" --provider searxng --searxng-url http://127.0.0.1:8888 --max-results 5 --pages 2
 python cli.py websearch "python async browser automation" --provider auto --searxng-url http://127.0.0.1:8888 --max-results 5 --pages 1
 python cli.py websearch "python async browser automation" --provider hybrid --searxng-url http://127.0.0.1:8888 --scrape-results --scrape-limit 2 --scrape-format markdown --max-results 5 --pages 1 --max-retries 2 --retry-backoff-ms 250
-python cli.py scrape https://www.python.org --format markdown --format links --format metadata --format app_state --max-retries 3 --retry-backoff-ms 250 --cache
+python cli.py scrape https://www.python.org --format markdown --format links --format metadata --format app_state --resource-mode safe --max-retries 3 --retry-backoff-ms 250 --cache
 python cli.py batch-scrape https://example.com https://www.python.org --format markdown --format metadata --max-concurrency 2 --cache
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --limit 5 --include-pattern tutorial --max-retries 2 --retry-backoff-ms 250
 python cli.py extract https://www.python.org/events/python-events/ --schema-file _ignore\\extract-schema.json --cache
@@ -237,8 +238,9 @@ python cli.py fetch https://example.com --format text --mode auto --cache --cach
 python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry-backoff-ms 250 --include-app-state --include-contacts --include-technologies --technology-aggression 1
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
 python cli.py fetch-page https://example.com --mode http --cache --cache-ttl 0 --cache-revalidate --include-headers
-python cli.py fetch-page https://www.python.org --mode browser --include-requests --consent-mode auto --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
+python cli.py fetch-page https://www.python.org --mode browser --include-requests --resource-mode safe --consent-mode auto --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py fetch-page https://example.com --mode browser --include-api-payloads --max-api-payloads 10
+python cli.py fetch-page https://example.com --mode browser --resource-mode aggressive --block-url-pattern "*://*.doubleclick.net/*"
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80 --include-technologies --technology-aggression 1
 python cli.py crawl https://example.com/docs --mode fast --max-pages 25 --dedupe-by-similarity --similarity-threshold 3
@@ -280,6 +282,8 @@ URL normalization is now applied to crawl dedupe by default. The crawler builds 
 Browser-mode fetches can now capture structured `fetch` and `XMLHttpRequest` response bodies. If you pass `include_api_payloads=True` in the SDK, `--include-api-payloads` in the CLI/MCP fetch-page or crawl workflow, or request `scrape --format api_payloads`, the result will include bounded JSON/text payloads with response URL, content type, status, size, preview text, and parsed JSON when available.
 
 Browser-mode fetches, scrapes, screenshots, and crawls can also opt into consent handling with `consent_mode` in the SDK or `--consent-mode` in the CLI/MCP layer. Supported modes are `auto`, `reject`, `accept`, `close`, and `none`. Performed actions are returned as `consent_actions` so callers can see whether a banner button was clicked or an overlay was removed. In a local same-origin iframe fixture benchmark run on March 13, 2026, the no-banner browser fetch average rose from about `3.5s` to about `6.5s` with `consent_mode="auto"`, which kept the fallback bounded while still catching delayed iframe banners.
+
+Browser-mode fetches, scrapes, extracts, queries, form scans, tech scans, and crawls can also opt into selective resource blocking with `resource_mode`, `blocked_resource_types`, `blocked_url_patterns`, and `bypass_service_worker`. The browser path now waits for bounded network idle instead of always sleeping a fixed two seconds after navigation, which reduces idle over-wait on light pages and lets blocked assets translate into real speedups. In a local asset-heavy fixture benchmark run on March 13, 2026, `resource_mode="safe"` cut browser fetch average time from about `4.1s` to about `2.8s` while reducing image requests from `6` to `0`.
 
 Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
 
@@ -332,6 +336,7 @@ crawl-mcp
 - `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, normalized URL keys, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request / API payload capture
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `browser consent handling`: optionally dismisses consent banners and iframe-hosted cookie prompts, removes stubborn overlays, and returns `consent_actions` for traceability
+- `browser resource blocking`: optionally blocks images, fonts, media, and caller-selected URL patterns, returns `blocked_resources`, and uses bounded network-idle waiting instead of a fixed post-navigation sleep
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, normalized URL dedupe, canonical alias detection, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
 - `crawl`: supports opt-in autoscaled concurrency based on sampled CPU and memory pressure

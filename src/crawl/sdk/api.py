@@ -25,9 +25,13 @@ from .browser import (
     collect_api_payload_capture,
     collect_request_capture,
     configure_page_request_settings,
+    configure_page_resource_blocking,
     enable_request_capture,
+    get_resource_blocking_stats,
     handle_consent_dialogs,
     perform_basic_interactions,
+    start_network_idle_tracking,
+    wait_for_page_network_idle,
 )
 from .cache import (
     build_cache_revalidation_headers,
@@ -774,6 +778,10 @@ async def request_browser_page(
     capture_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
@@ -792,6 +800,10 @@ async def request_browser_page(
         capture_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
@@ -821,8 +833,16 @@ async def request_browser_page(
             headers=headers,
             accept_invalid_certs=accept_invalid_certs,
         )
+        await configure_page_resource_blocking(
+            page,
+            resource_mode=resource_mode,
+            blocked_resource_types=blocked_resource_types,
+            blocked_url_patterns=blocked_url_patterns,
+            bypass_service_worker=bypass_service_worker,
+        )
+        await start_network_idle_tracking(page)
         await page.get(url)
-        await page.sleep(2)
+        network_idle = await wait_for_page_network_idle(page)
         consent_actions = await handle_consent_dialogs(
             page,
             consent_mode=consent_mode,
@@ -851,6 +871,8 @@ async def request_browser_page(
             "ssl_fallback_used": False,
             "requests": requests,
             "api_payloads": api_payloads,
+            "blocked_resources": get_resource_blocking_stats(page),
+            "network_idle": network_idle,
             "consent_actions": consent_actions,
             "interactions": interactions,
         }
@@ -869,6 +891,8 @@ def build_page_result(
     forms: list[dict] | None = None,
     requests: list[dict] | None = None,
     api_payloads: list[dict] | None = None,
+    blocked_resources: dict | None = None,
+    network_idle: dict | None = None,
     consent_actions: list[dict] | None = None,
     interactions: list[str] | None = None,
     app_state: dict | None = None,
@@ -939,6 +963,10 @@ def build_page_result(
         result["requests"] = requests
     if api_payloads is not None:
         result["api_payloads"] = api_payloads
+    if blocked_resources is not None:
+        result["blocked_resources"] = blocked_resources
+    if network_idle is not None:
+        result["network_idle"] = network_idle
     if consent_actions is not None:
         result["consent_actions"] = consent_actions
     if interactions is not None:
@@ -989,6 +1017,10 @@ async def _fetch_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
@@ -1034,6 +1066,10 @@ async def _fetch_page(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
@@ -1099,6 +1135,10 @@ async def _fetch_page(
                 capture_api_payloads=include_api_payloads,
                 max_api_payloads=max_api_payloads,
                 max_api_payload_bytes=max_api_payload_bytes,
+                resource_mode=resource_mode,
+                blocked_resource_types=blocked_resource_types,
+                blocked_url_patterns=blocked_url_patterns,
+                bypass_service_worker=bypass_service_worker,
                 consent_mode=consent_mode,
                 max_consent_actions=max_consent_actions,
                 interaction_mode=interaction_mode,
@@ -1219,6 +1259,10 @@ async def _fetch_page(
                     capture_api_payloads=include_api_payloads,
                     max_api_payloads=max_api_payloads,
                     max_api_payload_bytes=max_api_payload_bytes,
+                    resource_mode=resource_mode,
+                    blocked_resource_types=blocked_resource_types,
+                    blocked_url_patterns=blocked_url_patterns,
+                    bypass_service_worker=bypass_service_worker,
                     consent_mode=consent_mode,
                     max_consent_actions=max_consent_actions,
                     interaction_mode=interaction_mode,
@@ -1243,6 +1287,10 @@ async def _fetch_page(
                     capture_api_payloads=include_api_payloads,
                     max_api_payloads=max_api_payloads,
                     max_api_payload_bytes=max_api_payload_bytes,
+                    resource_mode=resource_mode,
+                    blocked_resource_types=blocked_resource_types,
+                    blocked_url_patterns=blocked_url_patterns,
+                    bypass_service_worker=bypass_service_worker,
                     consent_mode=consent_mode,
                     max_consent_actions=max_consent_actions,
                     interaction_mode=interaction_mode,
@@ -1347,6 +1395,8 @@ async def _fetch_page(
         forms=forms,
         requests=page_data.get("requests") if include_requests else None,
         api_payloads=page_data.get("api_payloads") if include_api_payloads else None,
+        blocked_resources=page_data.get("blocked_resources") or None,
+        network_idle=page_data.get("network_idle") or None,
         consent_actions=page_data.get("consent_actions") or None,
         interactions=page_data.get("interactions") or None,
         app_state=app_state,
@@ -1387,6 +1437,10 @@ async def fetch_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
@@ -1429,6 +1483,10 @@ async def fetch_page(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
@@ -1472,6 +1530,10 @@ async def fetch_page(
         include_api_payloads=include_api_payloads,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         interaction_mode=interaction_mode,
@@ -1493,6 +1555,10 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1515,6 +1581,10 @@ async def fetch(
         url: URL to fetch.
         output_format: Either ``markdown`` or ``text``.
         mode: Fetch strategy.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -1538,6 +1608,10 @@ async def fetch(
         url=url,
         mode=mode,
         include_html=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -1566,6 +1640,10 @@ async def scrape(
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1593,6 +1671,10 @@ async def scrape(
         article_max_pages: Maximum article pages to merge when pagination is enabled.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -1622,6 +1704,10 @@ async def scrape(
         include_api_payloads=bool(formats and "api_payloads" in formats),
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -1651,6 +1737,10 @@ async def scrape(
             max_pages=article_max_pages,
             max_api_payloads=max_api_payloads,
             max_api_payload_bytes=max_api_payload_bytes,
+            resource_mode=resource_mode,
+            blocked_resource_types=blocked_resource_types,
+            blocked_url_patterns=blocked_url_patterns,
+            bypass_service_worker=bypass_service_worker,
             consent_mode=consent_mode,
             max_consent_actions=max_consent_actions,
             cache=cache,
@@ -1672,6 +1762,10 @@ async def scrape(
 async def contacts(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1691,6 +1785,10 @@ async def contacts(
     Args:
         url: URL to inspect.
         mode: Fetch strategy.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -1712,6 +1810,10 @@ async def contacts(
         url=url,
         mode=mode,
         include_contacts=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -1739,6 +1841,10 @@ async def tech(
     max_pages: int = 1,
     max_depth: int = 0,
     allow_subdomains: bool = False,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1762,6 +1868,10 @@ async def tech(
         max_pages: Maximum pages to fingerprint.
         max_depth: Maximum crawl depth when scanning multiple pages.
         allow_subdomains: Whether subdomains are in scope for multi-page scans.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -1792,6 +1902,10 @@ async def tech(
                     url=candidate,
                     mode=mode,
                     include_technologies=True,
+                    resource_mode=resource_mode,
+                    blocked_resource_types=blocked_resource_types,
+                    blocked_url_patterns=blocked_url_patterns,
+                    bypass_service_worker=bypass_service_worker,
                     consent_mode=consent_mode,
                     max_consent_actions=max_consent_actions,
                     cache=cache,
@@ -1836,6 +1950,10 @@ async def tech(
         mode="browser" if mode == "browser" else "auto" if mode == "auto" else "fast",
         allow_subdomains=allow_subdomains,
         include_technologies=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -1874,6 +1992,10 @@ async def tech_grep(
     regex: str | None = None,
     search: str = "body",
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1896,6 +2018,10 @@ async def tech_grep(
         regex: Optional regex pattern.
         search: Search context.
         mode: Fetch mode.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -1918,6 +2044,10 @@ async def tech_grep(
         mode=mode,
         include_html=True,
         include_headers=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -1953,6 +2083,10 @@ async def batch_scrape(
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -1981,6 +2115,10 @@ async def batch_scrape(
         article_max_pages: Maximum article pages to merge when pagination is enabled.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -2014,6 +2152,10 @@ async def batch_scrape(
                     article_max_pages=article_max_pages,
                     max_api_payloads=max_api_payloads,
                     max_api_payload_bytes=max_api_payload_bytes,
+                    resource_mode=resource_mode,
+                    blocked_resource_types=blocked_resource_types,
+                    blocked_url_patterns=blocked_url_patterns,
+                    bypass_service_worker=bypass_service_worker,
                     consent_mode=consent_mode,
                     max_consent_actions=max_consent_actions,
                     cache=cache,
@@ -2051,6 +2193,10 @@ async def query_page(
     url: str,
     query: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -2071,6 +2217,10 @@ async def query_page(
         url: URL to query.
         query: Relevance query.
         mode: Fetch strategy.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -2094,6 +2244,10 @@ async def query_page(
         include_html=True,
         include_app_state=True,
         include_contacts=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -2419,6 +2573,10 @@ async def extract(
     url: str,
     schema: dict,
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -2439,6 +2597,10 @@ async def extract(
         url: URL to extract from.
         schema: CSS-based extraction schema.
         mode: Fetch strategy.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -2460,6 +2622,10 @@ async def extract(
         url=url,
         mode=mode,
         include_html=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -2486,6 +2652,10 @@ async def extract(
 async def forms(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -2506,6 +2676,10 @@ async def forms(
     Args:
         url: URL to inspect.
         mode: Fetch strategy.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -2530,6 +2704,10 @@ async def forms(
         include_html=False,
         include_forms=True,
         include_form_fill_suggestions=include_fill_suggestions,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -2557,6 +2735,10 @@ async def article(
     mode: Literal["auto", "http", "browser"] = "auto",
     follow_pagination: bool = False,
     max_pages: int = 3,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     cache: bool = False,
@@ -2578,6 +2760,10 @@ async def article(
         mode: Fetch strategy.
         follow_pagination: Whether to follow likely next-page links for split articles.
         max_pages: Maximum article pages to merge.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         cache: Whether to use disk caching.
@@ -2600,6 +2786,10 @@ async def article(
         url=url,
         mode=mode,
         include_html=True,
+        resource_mode=resource_mode,
+        blocked_resource_types=blocked_resource_types,
+        blocked_url_patterns=blocked_url_patterns,
+        bypass_service_worker=bypass_service_worker,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
         cache=cache,
@@ -2665,6 +2855,10 @@ async def article(
             url=next_candidate["url"],
             mode=mode,
             include_html=True,
+            resource_mode=resource_mode,
+            blocked_resource_types=blocked_resource_types,
+            blocked_url_patterns=blocked_url_patterns,
+            bypass_service_worker=bypass_service_worker,
             consent_mode=consent_mode,
             max_consent_actions=max_consent_actions,
             cache=cache,
@@ -2966,6 +3160,10 @@ async def crawl_one_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
@@ -3006,6 +3204,10 @@ async def crawl_one_page(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
@@ -3048,6 +3250,10 @@ async def crawl_one_page(
             include_api_payloads=include_api_payloads,
             max_api_payloads=max_api_payloads,
             max_api_payload_bytes=max_api_payload_bytes,
+            resource_mode=resource_mode,
+            blocked_resource_types=blocked_resource_types,
+            blocked_url_patterns=blocked_url_patterns,
+            bypass_service_worker=bypass_service_worker,
             consent_mode=consent_mode,
             max_consent_actions=max_consent_actions,
             interaction_mode=interaction_mode,
@@ -3110,6 +3316,10 @@ async def crawl(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    resource_mode: Literal["none", "safe", "aggressive"] = "none",
+    blocked_resource_types: list[str] | None = None,
+    blocked_url_patterns: list[str] | None = None,
+    bypass_service_worker: bool = False,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
     interaction_mode: Literal["none", "auto"] = "none",
@@ -3169,6 +3379,10 @@ async def crawl(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain per page.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        resource_mode: Browser resource blocking preset.
+        blocked_resource_types: Optional extra browser resource types to block.
+        blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
+        bypass_service_worker: Whether service workers should be bypassed.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
         interaction_mode: Interaction mode for simple page interactions.
@@ -3446,6 +3660,10 @@ async def crawl(
                         include_api_payloads=include_api_payloads,
                         max_api_payloads=max_api_payloads,
                         max_api_payload_bytes=max_api_payload_bytes,
+                        resource_mode=resource_mode,
+                        blocked_resource_types=blocked_resource_types,
+                        blocked_url_patterns=blocked_url_patterns,
+                        bypass_service_worker=bypass_service_worker,
                         consent_mode=consent_mode,
                         max_consent_actions=max_consent_actions,
                         interaction_mode=interaction_mode,
@@ -3626,6 +3844,10 @@ async def crawl(
         "path_delays": normalized_delay_map,
         "include_requests": include_requests,
         "include_api_payloads": include_api_payloads,
+        "resource_mode": resource_mode,
+        "blocked_resource_types": blocked_resource_types or [],
+        "blocked_url_patterns": blocked_url_patterns or [],
+        "bypass_service_worker": bypass_service_worker,
         "consent_mode": consent_mode,
         "max_consent_actions": max_consent_actions,
         "interaction_mode": interaction_mode,
