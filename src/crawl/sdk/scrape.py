@@ -3,6 +3,7 @@
 from typing import Literal
 
 from .article import extract_article_content
+from .article_metadata import extract_article_metadata
 from .chunking import rank_text_chunks
 from .page import extract_links_from_html, render_clean_html, render_page_content
 
@@ -29,6 +30,8 @@ def build_scrape_result(
     requested_formats = formats or ["markdown"]
     html = page_result.get("html", "")
     article_payload = extract_article_content(html) if only_main_content else None
+    if article_payload is not None:
+        article_payload["metadata"] = extract_article_metadata(html, article_text=article_payload.get("text", ""))
     result = {
         "url": page_result["final_url"],
         "metadata": page_result.get("metadata", {}),
@@ -65,7 +68,10 @@ def build_scrape_result(
     if "technologies" in requested_formats:
         result["technologies"] = page_result.get("technologies", {})
     if "article" in requested_formats:
-        result["article"] = article_payload or extract_article_content(html)
+        if article_payload is None:
+            article_payload = extract_article_content(html)
+            article_payload["metadata"] = extract_article_metadata(html, article_text=article_payload.get("text", ""))
+        result["article"] = article_payload
     if "fit_markdown" in requested_formats:
         markdown = result.get("markdown")
         if markdown is None:

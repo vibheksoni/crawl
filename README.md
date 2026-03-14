@@ -263,6 +263,8 @@ Most CLI commands can also append normalized row outputs into a local dataset wi
 
 Readable article extraction is available through the SDK `article()` helper, the CLI `article` command, and `scrape --format article`. The extractor scores paragraph-heavy containers, biases toward content-like class and id names, penalizes link-heavy nodes, promotes relevant siblings, and removes boilerplate such as share blocks, menus, and related-link rails.
 
+Article payloads now also include normalized metadata extracted from JSON-LD, Open Graph, publisher-specific meta tags, and visible body cues. That includes title, description, site name, author list, publication timestamps, canonical URL, lead image, language, keywords, and estimated reading time.
+
 Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
 
 Persistent browser state is opt-in only. If you pass `session_dir` in the SDK or `--session-dir` in the CLI, browser cookies and profile state are reused. If you omit it, browser sessions remain ephemeral.
@@ -303,7 +305,7 @@ crawl-mcp
 - `map_site`: discovers URLs within a site and can rank them by relevance to a search phrase
 - `extract`: performs selector-based structured extraction using reusable schemas
 - `forms`: extracts forms and can generate safe fill previews
-- `article`: extracts cleaned article-style content and summaries from noisy pages
+- `article`: extracts cleaned article-style content, summaries, and normalized article metadata from noisy pages
 - `feeds`: discovers and validates RSS, Atom, RDF, and JSON Feed endpoints from a page or small internal site slice
 - `contacts`: extracts emails, phone numbers, and grouped social links from a page
 - `tech`: fingerprints technologies, versions, categories, implied stacks, and generic page signals from a page or small site slice

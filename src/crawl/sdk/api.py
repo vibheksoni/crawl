@@ -17,6 +17,7 @@ from PIL import Image as PILImage
 
 from .app_state import extract_app_state, render_app_state_text
 from .article import extract_article_content
+from .article_metadata import extract_article_metadata
 from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
@@ -2406,10 +2407,15 @@ async def article(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
+    article_payload = extract_article_content(page.get("html", ""))
+    article_payload["metadata"] = extract_article_metadata(
+        page.get("html", ""),
+        article_text=article_payload.get("text", ""),
+    )
     return {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
-        "article": extract_article_content(page.get("html", "")),
+        "article": article_payload,
     }
 
 

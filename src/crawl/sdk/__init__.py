@@ -2,10 +2,11 @@
 
 from .api import article, batch_scrape, contacts, crawl, extract, fetch, fetch_page, feeds, forms, map_site, query_page, research, scrape, screenshot, tech, tech_grep, websearch
 from .article import extract_article_content
+from .article_metadata import extract_article_metadata
 from .dataset import append_dataset_rows, export_dataset, load_dataset_rows
 from .benchmark import benchmark_fast_crawl
 from .similarity import compute_simhash, simhash_distance
 from .tech import fingerprint_page, get_technology_definition, grep_page, search_technology_definitions, update_technology_definitions
 from .whatweb_import import build_plugin_signature_file
 
-__all__ = ["append_dataset_rows", "article", "batch_scrape", "benchmark_fast_crawl", "build_plugin_signature_file", "compute_simhash", "contacts", "crawl", "export_dataset", "extract", "extract_article_content", "fetch", "fetch_page", "feeds", "fingerprint_page", "forms", "get_technology_definition", "grep_page", "load_dataset_rows", "map_site", "query_page", "research", "scrape", "screenshot", "search_technology_definitions", "simhash_distance", "tech", "tech_grep", "update_technology_definitions", "websearch"]
+__all__ = ["append_dataset_rows", "article", "batch_scrape", "benchmark_fast_crawl", "build_plugin_signature_file", "compute_simhash", "contacts", "crawl", "export_dataset", "extract", "extract_article_content", "extract_article_metadata", "fetch", "fetch_page", "feeds", "fingerprint_page", "forms", "get_technology_definition", "grep_page", "load_dataset_rows", "map_site", "query_page", "research", "scrape", "screenshot", "search_technology_definitions", "simhash_distance", "tech", "tech_grep", "update_technology_definitions", "websearch"]
