@@ -22,6 +22,7 @@ from .article_pagination import discover_next_page_candidates, titles_look_relat
 from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
+    collect_api_payload_capture,
     collect_request_capture,
     configure_page_request_settings,
     enable_request_capture,
@@ -769,6 +770,9 @@ async def request_browser_page(
     proxy_url: str | None = None,
     session_dir: str | None = None,
     capture_requests: bool = False,
+    capture_api_payloads: bool = False,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
 ) -> dict:
@@ -782,6 +786,9 @@ async def request_browser_page(
         proxy_url: Optional proxy URL.
         session_dir: Optional persistent browser profile directory.
         capture_requests: Whether to capture browser requests.
+        capture_api_payloads: Whether to capture fetch/XHR response payloads.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
 
@@ -796,8 +803,13 @@ async def request_browser_page(
         session_dir=session_dir,
     ) as browser:
         page = await browser.get("about:blank")
-        if capture_requests:
-            await enable_request_capture(page)
+        if capture_requests or capture_api_payloads:
+            await enable_request_capture(
+                page,
+                capture_api_payloads=capture_api_payloads,
+                max_api_payloads=max_api_payloads,
+                max_api_payload_bytes=max_api_payload_bytes,
+            )
         await configure_page_request_settings(
             page,
             user_agent=user_agent,
@@ -814,6 +826,7 @@ async def request_browser_page(
 
         html = await page.get_content()
         requests = await collect_request_capture(page) if capture_requests else []
+        api_payloads = await collect_api_payload_capture(page) if capture_api_payloads else []
         return {
             "url": url,
             "final_url": page.url,
@@ -825,6 +838,7 @@ async def request_browser_page(
             "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
             "ssl_fallback_used": False,
             "requests": requests,
+            "api_payloads": api_payloads,
             "interactions": interactions,
         }
 
@@ -841,6 +855,7 @@ def build_page_result(
     signature: str | None = None,
     forms: list[dict] | None = None,
     requests: list[dict] | None = None,
+    api_payloads: list[dict] | None = None,
     interactions: list[str] | None = None,
     app_state: dict | None = None,
     contacts: dict | None = None,
@@ -908,6 +923,8 @@ def build_page_result(
         result["forms"] = forms
     if requests is not None:
         result["requests"] = requests
+    if api_payloads is not None:
+        result["api_payloads"] = api_payloads
     if interactions is not None:
         result["interactions"] = interactions
     if app_state is not None:
@@ -953,6 +970,9 @@ async def _fetch_page(
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
     include_requests: bool = False,
+    include_api_payloads: bool = False,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -993,6 +1013,9 @@ async def _fetch_page(
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
         include_requests: Whether to capture browser requests.
+        include_api_payloads: Whether to capture fetch/XHR response payloads.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -1053,6 +1076,9 @@ async def _fetch_page(
                 proxy_url=selected_proxy,
                 session_dir=session_dir,
                 capture_requests=include_requests,
+                capture_api_payloads=include_api_payloads,
+                max_api_payloads=max_api_payloads,
+                max_api_payload_bytes=max_api_payload_bytes,
                 interaction_mode=interaction_mode,
                 max_interactions=max_interactions,
             )
@@ -1168,6 +1194,9 @@ async def _fetch_page(
                     proxy_url=selected_proxy,
                     session_dir=session_dir,
                     capture_requests=include_requests,
+                    capture_api_payloads=include_api_payloads,
+                    max_api_payloads=max_api_payloads,
+                    max_api_payload_bytes=max_api_payload_bytes,
                     interaction_mode=interaction_mode,
                     max_interactions=max_interactions,
                 )
@@ -1187,6 +1216,9 @@ async def _fetch_page(
                     proxy_url=selected_proxy,
                     session_dir=session_dir,
                     capture_requests=include_requests,
+                    capture_api_payloads=include_api_payloads,
+                    max_api_payloads=max_api_payloads,
+                    max_api_payload_bytes=max_api_payload_bytes,
                     interaction_mode=interaction_mode,
                     max_interactions=max_interactions,
                 )
@@ -1288,6 +1320,7 @@ async def _fetch_page(
         signature=signature,
         forms=forms,
         requests=page_data.get("requests") if include_requests else None,
+        api_payloads=page_data.get("api_payloads") if include_api_payloads else None,
         interactions=page_data.get("interactions") or None,
         app_state=app_state,
         contacts=contacts,
@@ -1324,6 +1357,9 @@ async def fetch_page(
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
     include_requests: bool = False,
+    include_api_payloads: bool = False,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -1361,6 +1397,9 @@ async def fetch_page(
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
         include_requests: Whether to capture browser requests.
+        include_api_payloads: Whether to capture fetch/XHR response payloads.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -1399,6 +1438,9 @@ async def fetch_page(
         include_forms=include_forms,
         include_form_fill_suggestions=include_form_fill_suggestions,
         include_requests=include_requests,
+        include_api_payloads=include_api_payloads,
+        max_api_payloads=max_api_payloads,
+        max_api_payload_bytes=max_api_payload_bytes,
         interaction_mode=interaction_mode,
         max_interactions=max_interactions,
         session_dir=session_dir,
@@ -1483,6 +1525,8 @@ async def scrape(
     mode: Literal["auto", "http", "browser"] = "auto",
     follow_pagination: bool = False,
     article_max_pages: int = 3,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -1506,6 +1550,8 @@ async def scrape(
         mode: Fetch strategy.
         follow_pagination: Whether article extraction should follow likely next-page links.
         article_max_pages: Maximum article pages to merge when pagination is enabled.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -1530,6 +1576,9 @@ async def scrape(
         include_app_state=bool(formats and "app_state" in formats),
         include_contacts=bool(formats and "contacts" in formats),
         include_technologies=bool(formats and "technologies" in formats),
+        include_api_payloads=bool(formats and "api_payloads" in formats),
+        max_api_payloads=max_api_payloads,
+        max_api_payload_bytes=max_api_payload_bytes,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -1555,6 +1604,8 @@ async def scrape(
             mode=mode,
             follow_pagination=True,
             max_pages=article_max_pages,
+            max_api_payloads=max_api_payloads,
+            max_api_payload_bytes=max_api_payload_bytes,
             cache=cache,
             cache_dir=cache_dir,
             cache_ttl_seconds=cache_ttl_seconds,
@@ -1833,6 +1884,8 @@ async def batch_scrape(
     max_concurrency: int = 4,
     follow_pagination: bool = False,
     article_max_pages: int = 3,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -1857,6 +1910,8 @@ async def batch_scrape(
         max_concurrency: Maximum concurrent scrape tasks.
         follow_pagination: Whether article extraction should follow likely next-page links.
         article_max_pages: Maximum article pages to merge when pagination is enabled.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -1886,6 +1941,8 @@ async def batch_scrape(
                     mode=mode,
                     follow_pagination=follow_pagination,
                     article_max_pages=article_max_pages,
+                    max_api_payloads=max_api_payloads,
+                    max_api_payload_bytes=max_api_payload_bytes,
                     cache=cache,
                     cache_dir=cache_dir,
                     cache_ttl_seconds=cache_ttl_seconds,
@@ -2807,6 +2864,9 @@ async def crawl_one_page(
     proxy_index: int = 0,
     full_resources: bool = False,
     include_requests: bool = False,
+    include_api_payloads: bool = False,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -2842,6 +2902,9 @@ async def crawl_one_page(
         proxy_index: Round-robin proxy selection index.
         full_resources: Whether to include resource URLs in discovery.
         include_requests: Whether to capture browser requests.
+        include_api_payloads: Whether to capture fetch/XHR response payloads.
+        max_api_payloads: Maximum API payload records to retain.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -2879,6 +2942,9 @@ async def crawl_one_page(
             proxy_index=proxy_index,
             full_resources=full_resources,
             include_requests=include_requests,
+            include_api_payloads=include_api_payloads,
+            max_api_payloads=max_api_payloads,
+            max_api_payload_bytes=max_api_payload_bytes,
             interaction_mode=interaction_mode,
             max_interactions=max_interactions,
             session_dir=session_dir,
@@ -2936,6 +3002,9 @@ async def crawl(
     delay_ms: int = 0,
     path_delays: dict[str, int] | None = None,
     include_requests: bool = False,
+    include_api_payloads: bool = False,
+    max_api_payloads: int = 20,
+    max_api_payload_bytes: int = 200000,
     interaction_mode: Literal["none", "auto"] = "none",
     max_interactions: int = 3,
     session_dir: str | None = None,
@@ -2990,6 +3059,9 @@ async def crawl(
         delay_ms: Default crawl delay in milliseconds.
         path_delays: Optional per-path delay mapping in milliseconds.
         include_requests: Whether to capture browser requests.
+        include_api_payloads: Whether to capture fetch/XHR response payloads.
+        max_api_payloads: Maximum API payload records to retain per page.
+        max_api_payload_bytes: Maximum payload text length to retain per response.
         interaction_mode: Interaction mode for simple page interactions.
         max_interactions: Maximum interactions to perform.
         session_dir: Optional persistent browser profile directory.
@@ -3262,6 +3334,9 @@ async def crawl(
                         proxy_index=len(results) + batch_index,
                         full_resources=full_resources,
                         include_requests=include_requests,
+                        include_api_payloads=include_api_payloads,
+                        max_api_payloads=max_api_payloads,
+                        max_api_payload_bytes=max_api_payload_bytes,
                         interaction_mode=interaction_mode,
                         max_interactions=max_interactions,
                         session_dir=session_dir,
@@ -3439,6 +3514,7 @@ async def crawl(
         "delay_ms": delay_ms,
         "path_delays": normalized_delay_map,
         "include_requests": include_requests,
+        "include_api_payloads": include_api_payloads,
         "interaction_mode": interaction_mode,
         "max_retries": max_retries,
         "retry_backoff_ms": retry_backoff_ms,

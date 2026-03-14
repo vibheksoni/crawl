@@ -7,7 +7,7 @@ from .article_metadata import extract_article_metadata
 from .chunking import rank_text_chunks
 from .page import extract_links_from_html, render_clean_html, render_page_content
 
-ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"]
+ScrapeFormat = Literal["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article", "api_payloads"]
 
 
 def build_scrape_result(
@@ -67,6 +67,8 @@ def build_scrape_result(
         result["contacts"] = page_result.get("contacts", {})
     if "technologies" in requested_formats:
         result["technologies"] = page_result.get("technologies", {})
+    if "api_payloads" in requested_formats:
+        result["api_payloads"] = page_result.get("api_payloads", [])
     if "article" in requested_formats:
         if article_payload is None:
             article_payload = extract_article_content(html)

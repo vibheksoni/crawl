@@ -236,6 +236,7 @@ python cli.py fetch-page https://example.com --mode http --max-retries 3 --retry
 python cli.py fetch-page https://httpbin.org/headers --mode http --include-html --include-headers --full-resources --pattern-mode glob --user-agent crawl-cli-demo/1.0 --header "X-Demo: yes" --cache
 python cli.py fetch-page https://example.com --mode http --cache --cache-ttl 0 --cache-revalidate --include-headers
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
+python cli.py fetch-page https://example.com --mode browser --include-api-payloads --max-api-payloads 10
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80 --include-technologies --technology-aggression 1
 python cli.py crawl https://example.com/docs --mode fast --max-pages 25 --dedupe-by-similarity --similarity-threshold 3
@@ -243,6 +244,7 @@ python cli.py crawl https://www.python.org --mode browser --max-pages 5 --crawl-
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{url}} | {{title}}"
 python cli.py map https://docs.python.org/3/tutorial/ --search interpreter --output-template "{{total}}"
 python cli.py batch-scrape https://example.com https://www.python.org --format metadata --jsonl --field url --field metadata.title --store-field url
+python cli.py scrape https://example.com --mode browser --format api_payloads --max-api-payloads 10
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 2 --dataset-dir .\\storage\\datasets --dataset-name crawl-results
 python cli.py dataset-export crawl-results --dataset-dir .\\storage\\datasets --format csv
 python cli.py screenshot https://example.com --output example.jpg
@@ -272,6 +274,8 @@ Article payloads now also include normalized metadata extracted from JSON-LD, Op
 If you enable `follow_pagination=True` in the SDK or `--follow-pagination` in the CLI/MCP article workflow, the article helper will try to follow likely split-article continuation links, merge page text and cleaned HTML, and return `page_count`, `pages`, `pagination_followed`, and `pagination_stop_reason` in the article payload.
 
 URL normalization is now applied to crawl dedupe by default. The crawler builds stable URL keys by lowercasing hosts, removing default ports, stripping fragments, dropping common tracking and session parameters, removing blank query values, and sorting query parameters for comparison. Structured page payloads now include `normalized_url` and `dedupe_key`, and crawl results can mark canonical aliases with `is_duplicate_url` and `duplicate_of_url`.
+
+Browser-mode fetches can now capture structured `fetch` and `XMLHttpRequest` response bodies. If you pass `include_api_payloads=True` in the SDK, `--include-api-payloads` in the CLI/MCP fetch-page or crawl workflow, or request `scrape --format api_payloads`, the result will include bounded JSON/text payloads with response URL, content type, status, size, preview text, and parsed JSON when available.
 
 Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
 
@@ -321,7 +325,7 @@ crawl-mcp
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
 - `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
 - `normalize_url`: normalizes URLs for crawler dedupe and canonical comparison
-- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, normalized URL keys, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
+- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, normalized URL keys, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request / API payload capture
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, normalized URL dedupe, canonical alias detection, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs

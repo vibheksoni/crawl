@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--scrape-limit", type=int, default=3, dest="scrape_limit")
     search_parser.add_argument(
         "--scrape-format",
-        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies", "article"],
+        choices=["markdown", "text", "html", "links", "metadata", "app_state", "contacts", "technologies", "article", "api_payloads"],
         action="append",
         dest="scrape_formats",
     )
@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("url", help="Page URL.")
     scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article", "api_payloads"],
         action="append",
         dest="formats",
     )
@@ -160,6 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--mode", choices=["auto", "http", "browser"], default="auto")
     scrape_parser.add_argument("--follow-pagination", action="store_true", dest="follow_pagination")
     scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
+    scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
+    scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
     scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -176,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("urls", nargs="+", help="URL list.")
     batch_scrape_parser.add_argument(
         "--format",
-        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article"],
+        choices=["markdown", "text", "html", "links", "metadata", "fit_markdown", "app_state", "contacts", "technologies", "article", "api_payloads"],
         action="append",
         dest="formats",
     )
@@ -187,6 +189,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--max-concurrency", type=int, default=4, dest="max_concurrency")
     batch_scrape_parser.add_argument("--follow-pagination", action="store_true", dest="follow_pagination")
     batch_scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
+    batch_scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
+    batch_scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
     batch_scrape_parser.add_argument("--cache", action="store_true", dest="cache")
     batch_scrape_parser.add_argument("--cache-dir", dest="cache_dir")
     batch_scrape_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
@@ -407,6 +411,9 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--pattern-mode", choices=["auto", "substring", "regex", "glob"], default="auto")
     fetch_page_parser.add_argument("--full-resources", action="store_true", dest="full_resources")
     fetch_page_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
+    fetch_page_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
+    fetch_page_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
+    fetch_page_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
     fetch_page_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     fetch_page_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     fetch_page_parser.add_argument("--session-dir", dest="session_dir")
@@ -448,6 +455,9 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--include-technologies", action="store_true", dest="include_technologies")
     crawl_parser.add_argument("--technology-aggression", type=int, choices=[1, 2, 3], default=1, dest="technology_aggression")
     crawl_parser.add_argument("--include-requests", action="store_true", dest="include_requests")
+    crawl_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
+    crawl_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
+    crawl_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
     crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
     crawl_parser.add_argument("--max-interactions", type=int, default=3, dest="max_interactions")
     crawl_parser.add_argument("--session-dir", dest="session_dir")
@@ -579,6 +589,8 @@ async def run_command(args: argparse.Namespace):
             mode=args.mode,
             follow_pagination=args.follow_pagination,
             article_max_pages=args.article_max_pages,
+            max_api_payloads=args.max_api_payloads,
+            max_api_payload_bytes=args.max_api_payload_bytes,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -693,6 +705,8 @@ async def run_command(args: argparse.Namespace):
             max_concurrency=args.max_concurrency,
             follow_pagination=args.follow_pagination,
             article_max_pages=args.article_max_pages,
+            max_api_payloads=args.max_api_payloads,
+            max_api_payload_bytes=args.max_api_payload_bytes,
             cache=args.cache,
             cache_dir=args.cache_dir,
             cache_ttl_seconds=args.cache_ttl_seconds,
@@ -830,6 +844,9 @@ async def run_command(args: argparse.Namespace):
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
             include_requests=args.include_requests,
+            include_api_payloads=args.include_api_payloads,
+            max_api_payloads=args.max_api_payloads,
+            max_api_payload_bytes=args.max_api_payload_bytes,
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
@@ -871,6 +888,9 @@ async def run_command(args: argparse.Namespace):
             similarity_threshold=args.similarity_threshold,
             include_technologies=args.include_technologies,
             include_requests=args.include_requests,
+            include_api_payloads=args.include_api_payloads,
+            max_api_payloads=args.max_api_payloads,
+            max_api_payload_bytes=args.max_api_payload_bytes,
             interaction_mode=args.interaction_mode,
             max_interactions=args.max_interactions,
             session_dir=args.session_dir,
