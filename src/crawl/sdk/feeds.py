@@ -6,6 +6,8 @@ from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 
+from .urlnorm import get_url_dedupe_key
+
 FEED_CONTENT_TYPES = {
     "application/atom+xml",
     "application/feed+json",
@@ -181,9 +183,10 @@ def discover_feed_spider_links(
             continue
         if parsed_candidate.scheme not in {"http", "https"}:
             continue
-        if candidate_url in seen_urls:
+        candidate_key = get_url_dedupe_key(candidate_url)
+        if candidate_key in seen_urls:
             continue
-        seen_urls.add(candidate_url)
+        seen_urls.add(candidate_key)
 
         candidate_tokens = {token for token in parsed_candidate.path.split("/") if token}
         score = len(path_tokens & candidate_tokens)
@@ -214,9 +217,10 @@ def merge_feed_candidates(candidates: list[dict], max_candidates: int | None = N
         candidate_url = candidate.get("url")
         if not candidate_url:
             continue
-        existing = merged_by_url.get(candidate_url)
+        candidate_key = get_url_dedupe_key(candidate_url)
+        existing = merged_by_url.get(candidate_key)
         if existing is None:
-            merged_by_url[candidate_url] = {
+            merged_by_url[candidate_key] = {
                 "url": candidate_url,
                 "score": int(candidate.get("score", 0)),
                 "sources": [candidate.get("source")] if candidate.get("source") else [],

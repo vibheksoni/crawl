@@ -5,6 +5,8 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from .urlnorm import get_url_dedupe_key
+
 NEGATIVE_PAGINATION_RE = re.compile(
     r"author|back|comment|contact|older posts|newer posts|previous|prev|related|reply|share|sidebar|social",
     re.I,
@@ -232,8 +234,8 @@ def discover_next_page_candidates(
             current_url=current_url,
             canonical_url=canonical_url,
         )
-        if candidate and candidate["url"] not in seen_urls:
-            seen_urls.add(candidate["url"])
+        if candidate and get_url_dedupe_key(candidate["url"]) not in seen_urls:
+            seen_urls.add(get_url_dedupe_key(candidate["url"]))
             candidates.append(candidate)
 
     for anchor in soup.find_all("a", href=True):
@@ -259,8 +261,8 @@ def discover_next_page_candidates(
             current_url=current_url,
             canonical_url=canonical_url,
         )
-        if candidate and candidate["url"] not in seen_urls:
-            seen_urls.add(candidate["url"])
+        if candidate and get_url_dedupe_key(candidate["url"]) not in seen_urls:
+            seen_urls.add(get_url_dedupe_key(candidate["url"]))
             candidates.append(candidate)
 
     candidates.sort(key=lambda item: (item["score"], item["url"]), reverse=True)

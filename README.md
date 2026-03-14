@@ -51,11 +51,12 @@ python -m pip install -r requirements.txt
 ```python
 import asyncio
 
-from crawl.sdk import article, batch_scrape, contacts, crawl, extract, fetch, fetch_page, feeds, forms, map_site, query_page, research, scrape, tech, websearch
+from crawl.sdk import article, batch_scrape, contacts, crawl, extract, fetch, fetch_page, feeds, forms, map_site, normalize_url, query_page, research, scrape, tech, websearch
 
 
 async def main() -> None:
     search_results = await websearch("python async browser automation", max_results=5, pages=1)
+    normalized = normalize_url("https://example.com/article?utm_source=demo&a=1#frag")
     searxng_results = await websearch(
         "python async browser automation",
         max_results=5,
@@ -247,6 +248,7 @@ python cli.py dataset-export crawl-results --dataset-dir .\\storage\\datasets --
 python cli.py screenshot https://example.com --output example.jpg
 python cli.py benchmark https://example.com --max-pages 12 --samples 3 --concurrency 1 2 4 8
 python cli.py benchmark https://example.com/docs --max-pages 20 --samples 3 --concurrency 2 4 8 --dedupe-by-similarity --similarity-threshold 3
+python cli.py normalize-url "https://example.com/article?utm_source=demo&a=1#frag"
 ```
 
 After installation, you can also use:
@@ -268,6 +270,8 @@ Readable article extraction is available through the SDK `article()` helper, the
 Article payloads now also include normalized metadata extracted from JSON-LD, Open Graph, publisher-specific meta tags, and visible body cues. That includes title, description, site name, author list, publication timestamps, canonical URL, lead image, language, keywords, and estimated reading time.
 
 If you enable `follow_pagination=True` in the SDK or `--follow-pagination` in the CLI/MCP article workflow, the article helper will try to follow likely split-article continuation links, merge page text and cleaned HTML, and return `page_count`, `pages`, `pagination_followed`, and `pagination_stop_reason` in the article payload.
+
+URL normalization is now applied to crawl dedupe by default. The crawler builds stable URL keys by lowercasing hosts, removing default ports, stripping fragments, dropping common tracking and session parameters, removing blank query values, and sorting query parameters for comparison. Structured page payloads now include `normalized_url` and `dedupe_key`, and crawl results can mark canonical aliases with `is_duplicate_url` and `duplicate_of_url`.
 
 Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
 
@@ -316,9 +320,10 @@ crawl-mcp
 - `tech_grep`: performs ad-hoc literal or regex matching across page signal contexts for scanner-style custom checks
 - `query_page`: returns query-relevant chunks and fit markdown from a page, plus app-state-derived relevance matches when embedded payloads contain useful text
 - `research`: searches the web, deeply analyzes the top result pages, and returns merged ranked chunks across sources for agent-style research workflows
-- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
+- `normalize_url`: normalizes URLs for crawler dedupe and canonical comparison
+- `fetch_page`: returns structured page details including metadata, discovered page links, discovered resources, content signatures, normalized URL keys, timing, bytes transferred, optional headers, optional raw HTML, optional embedded app-state extraction, optional contact/social extraction, optional technology fingerprinting, detected block reasons, request controls, cache hits, and optional browser-side request capture / lightweight interaction results
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
-- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
+- `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, normalized URL dedupe, canonical alias detection, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
 - `crawl`: supports opt-in autoscaled concurrency based on sampled CPU and memory pressure
 - `dataset_export`: exports persisted local datasets as JSON, JSONL, or CSV with union-key CSV support

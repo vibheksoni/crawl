@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
-from crawl.sdk import append_dataset_rows, article, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_technology_definition, map_site, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
+from crawl.sdk import append_dataset_rows, article, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_canonical_dedupe_key, get_technology_definition, get_url_dedupe_key, map_site, normalize_url, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
 
 
 def parse_budget_entries(entries: list[str] | None) -> dict[str, int] | None:
@@ -500,6 +500,14 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--similarity-threshold", type=int, default=3, dest="similarity_threshold")
     benchmark_parser.add_argument("--cache-revalidate", action="store_true", dest="cache_revalidate")
 
+    normalize_url_parser = subparsers.add_parser("normalize-url", help="Normalize a URL for crawler dedupe and canonical comparison.")
+    normalize_url_parser.add_argument("url", help="URL to normalize.")
+    normalize_url_parser.add_argument("--keep-tracking-params", action="store_true", dest="keep_tracking_params")
+    normalize_url_parser.add_argument("--keep-blank-values", action="store_true", dest="keep_blank_values")
+    normalize_url_parser.add_argument("--keep-fragments", action="store_true", dest="keep_fragments")
+    normalize_url_parser.add_argument("--keep-query-order", action="store_true", dest="keep_query_order")
+    add_common_output_options(normalize_url_parser)
+
     dataset_export_parser = subparsers.add_parser("dataset-export", help="Export a persisted dataset to JSON, JSONL, or CSV.")
     dataset_export_parser.add_argument("dataset_name", help="Dataset name.")
     dataset_export_parser.add_argument("--dataset-dir", dest="dataset_dir")
@@ -912,6 +920,28 @@ async def run_command(args: argparse.Namespace):
             similarity_threshold=args.similarity_threshold,
             cache_revalidate=args.cache_revalidate,
         )
+
+    if args.command == "normalize-url":
+        normalized = normalize_url(
+            args.url,
+            drop_tracking_params=not args.keep_tracking_params,
+            keep_blank_values=args.keep_blank_values,
+            keep_fragments=args.keep_fragments,
+            sort_query_params=not args.keep_query_order,
+        )
+        return {
+            "input_url": args.url,
+            "normalized_url": normalized,
+            "dedupe_key": get_url_dedupe_key(
+                args.url,
+                drop_tracking_params=not args.keep_tracking_params,
+            ),
+            "canonical_dedupe_key": get_canonical_dedupe_key(
+                args.url,
+                canonical_url=normalized,
+                drop_tracking_params=not args.keep_tracking_params,
+            ),
+        }
 
     if args.command == "dataset-export":
         return export_dataset(

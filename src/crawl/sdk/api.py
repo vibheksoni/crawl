@@ -75,6 +75,7 @@ from .similarity import (
     parse_simhash,
 )
 from .tech import fingerprint_page, grep_page
+from .urlnorm import get_canonical_dedupe_key, get_url_dedupe_key
 from .searxng import search_searxng
 
 
@@ -92,10 +93,11 @@ def dedupe_search_items(items: list[dict]) -> list[dict]:
 
     for item in items:
         link = item.get("link")
-        if link and link in seen_links:
+        link_key = get_url_dedupe_key(link) if link else None
+        if link_key and link_key in seen_links:
             continue
-        if link:
-            seen_links.add(link)
+        if link_key:
+            seen_links.add(link_key)
         deduped.append(item)
 
     return deduped
@@ -845,6 +847,8 @@ def build_page_result(
     blocked_reason: str | None = None,
     technologies: dict | None = None,
     similarity_signature: str | None = None,
+    normalized_url: str | None = None,
+    dedupe_key: str | None = None,
 ) -> dict:
     """Build a normalized page result payload.
 
@@ -888,6 +892,10 @@ def build_page_result(
     }
     if similarity_signature is not None:
         result["similarity_signature"] = similarity_signature
+    if normalized_url is not None:
+        result["normalized_url"] = normalized_url
+    if dedupe_key is not None:
+        result["dedupe_key"] = dedupe_key
 
     if "cache_revalidated" in page_data:
         result["cache_revalidated"] = page_data["cache_revalidated"]
@@ -1262,6 +1270,12 @@ async def _fetch_page(
         contacts = None
         technologies = None
 
+    normalized_url = get_url_dedupe_key(page_data["final_url"])
+    dedupe_key = get_canonical_dedupe_key(
+        page_data["final_url"],
+        canonical_url=page_meta["metadata"].get("canonical_url"),
+    )
+
     result = build_page_result(
         page_data,
         page_meta,
@@ -1280,6 +1294,8 @@ async def _fetch_page(
         blocked_reason=blocked_reason,
         technologies=technologies,
         similarity_signature=similarity_signature,
+        normalized_url=normalized_url,
+        dedupe_key=dedupe_key,
     )
     await run_named_hook(hooks, "on_request_end", result)
     return result, page_meta["links"]
@@ -2249,9 +2265,10 @@ async def map_site(
     deduped_urls = []
     seen_urls = set()
     for item in items:
-        if item["url"] in seen_urls:
+        item_key = get_url_dedupe_key(item["url"])
+        if item_key in seen_urls:
             continue
-        seen_urls.add(item["url"])
+        seen_urls.add(item_key)
         deduped_urls.append(item)
 
     return {
@@ -2462,7 +2479,7 @@ async def article(
             "metadata": article_payload["metadata"],
         }
     ]
-    seen_urls = {page["final_url"]}
+    seen_urls = {get_url_dedupe_key(page["final_url"])}
     seen_signatures = set()
     merged_texts = [article_payload.get("text", "")]
     merged_html_segments = [article_payload.get("html", "")]
@@ -2480,7 +2497,11 @@ async def article(
             current_page["final_url"],
             canonical_url=base_canonical_url,
         )
-        candidates = [candidate for candidate in candidates if candidate["url"] not in seen_urls]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if get_url_dedupe_key(candidate["url"]) not in seen_urls
+        ]
         if not candidates:
             pagination_stop_reason = "no_candidate"
             break
@@ -2519,7 +2540,7 @@ async def article(
             pagination_stop_reason = "duplicate_page"
             break
 
-        seen_urls.add(next_page["final_url"])
+        seen_urls.add(get_url_dedupe_key(next_page["final_url"]))
         if next_signature is not None:
             seen_signatures.add(next_signature)
         merged_texts.append(next_text)
@@ -2623,8 +2644,9 @@ async def feeds(
         Feed discovery payload with validated feed metadata.
     """
     queued_pages = deque([(url, 0)])
-    queued_urls = {url}
+    queued_urls = {get_url_dedupe_key(url)}
     scanned_pages = []
+    scanned_page_keys = set()
     errors = []
     raw_candidates = []
     validated_feeds = []
@@ -2653,7 +2675,7 @@ async def feeds(
 
     while queued_pages and len(scanned_pages) < max(1, spider_limit if spider_depth > 0 else 1):
         current_url, depth = queued_pages.popleft()
-        queued_urls.discard(current_url)
+        queued_urls.discard(get_url_dedupe_key(current_url))
 
         try:
             page = await load_feed_page(current_url)
@@ -2662,7 +2684,8 @@ async def feeds(
             continue
 
         final_url = page.get("final_url") or current_url
-        if final_url in {item["url"] for item in scanned_pages}:
+        final_url_key = get_url_dedupe_key(final_url)
+        if final_url_key in scanned_page_keys:
             continue
 
         analysis = analyze_feed_document(
@@ -2687,7 +2710,8 @@ async def feeds(
                     "discovered_from": [final_url],
                 }
             )
-            seen_feed_urls.add(final_url)
+            seen_feed_urls.add(final_url_key)
+            scanned_page_keys.add(final_url_key)
             scanned_pages.append(page_entry)
             continue
 
@@ -2696,6 +2720,7 @@ async def feeds(
             candidate["discovered_from"] = final_url
         raw_candidates.extend(page_candidates)
         page_entry["candidate_count"] = len(page_candidates)
+        scanned_page_keys.add(final_url_key)
         scanned_pages.append(page_entry)
 
         if depth >= spider_depth:
@@ -2706,16 +2731,18 @@ async def feeds(
             final_url,
             limit=max(1, spider_limit),
         ):
-            if spider_url in queued_urls:
+            spider_url_key = get_url_dedupe_key(spider_url)
+            if spider_url_key in queued_urls:
                 continue
-            queued_urls.add(spider_url)
+            queued_urls.add(spider_url_key)
             queued_pages.append((spider_url, depth + 1))
 
     merged_candidates = merge_feed_candidates(raw_candidates, max_candidates=max_candidates)
 
     for candidate in merged_candidates:
         candidate_url = candidate.get("url")
-        if not candidate_url or candidate_url in seen_feed_urls:
+        candidate_url_key = get_url_dedupe_key(candidate_url) if candidate_url else None
+        if not candidate_url or candidate_url_key in seen_feed_urls:
             continue
         try:
             page = await load_feed_page(candidate_url)
@@ -2732,10 +2759,11 @@ async def feeds(
             continue
 
         validated_feed_url = analysis["url"]
-        if validated_feed_url in seen_feed_urls:
+        validated_feed_url_key = get_url_dedupe_key(validated_feed_url)
+        if validated_feed_url_key in seen_feed_urls:
             continue
 
-        seen_feed_urls.add(validated_feed_url)
+        seen_feed_urls.add(validated_feed_url_key)
         validated_feeds.append({**candidate, **analysis})
         if len(validated_feeds) >= max(1, max_feeds):
             break
@@ -2992,6 +3020,7 @@ async def crawl(
     queued = set()
     to_visit = [] if crawl_strategy == "best_first" else deque()
     results = []
+    seen_url_keys = {}
     seen_signatures = {}
     similarity_fingerprints = {}
     similarity_bucket_index = {}
@@ -3010,12 +3039,17 @@ async def crawl(
     loaded_state = load_crawl_state(state_path)
     current_concurrency = max_concurrency if not autoscale_concurrency else min_concurrency
     autoscale_snapshots = []
+    processed_count = 0
 
     if loaded_state:
         resumed_from_state = True
         start_url = loaded_state.get("start_url", start_url)
         url = loaded_state.get("input_url", url)
-        visited = set(loaded_state.get("visited", []))
+        visited = {
+            get_url_dedupe_key(item)
+            for item in loaded_state.get("visited", [])
+            if item
+        }
         results = loaded_state.get("results", [])
         seen_signatures = loaded_state.get("seen_signatures", {})
         normalized_budget = loaded_state.get("budget_remaining", normalized_budget)
@@ -3028,14 +3062,25 @@ async def crawl(
             if not current_url:
                 continue
             frontier_push(to_visit, current_url, current_depth, strategy=crawl_strategy, query=crawl_query)
-        queued = {item.get("url") for item in loaded_state.get("frontier", []) if item.get("url")}
+        queued = {
+            get_url_dedupe_key(item.get("url"))
+            for item in loaded_state.get("frontier", [])
+            if item.get("url")
+        }
+    processed_count = len(results)
 
     for item in results:
+        for key in (item.get("normalized_url"), item.get("dedupe_key")):
+            if key:
+                visited.add(get_url_dedupe_key(key))
+        dedupe_key = item.get("dedupe_key") or item.get("normalized_url")
+        representative_url = item.get("final_url") or item.get("url")
+        if dedupe_key and representative_url:
+            seen_url_keys[dedupe_key] = representative_url
         if item.get("is_near_duplicate"):
             continue
         similarity_signature = item.get("similarity_signature")
         similarity_value = parse_simhash(similarity_signature)
-        representative_url = item.get("final_url") or item.get("url")
         if representative_url and similarity_value is not None:
             similarity_fingerprints[representative_url] = similarity_value
             add_simhash_to_index(
@@ -3089,7 +3134,7 @@ async def crawl(
     )
     async with AsyncSession(impersonate="chrome", timeout=15, headers=request_headers) as session:
         if not resumed_from_state and consume_crawl_budget(start_url, normalized_budget):
-            queued.add(start_url)
+            queued.add(get_url_dedupe_key(start_url))
             frontier_push(to_visit, start_url, 0, strategy=crawl_strategy, query=crawl_query)
 
         if respect_robots_txt or seed_sitemap or sitemap_url:
@@ -3127,7 +3172,8 @@ async def crawl(
             sitemap_seeds = await collect_sitemap_urls(session, filtered_sitemaps, limit=max_pages * 10)
             for sitemap_seed in sitemap_seeds:
                 normalized_seed = strip_fragment(sitemap_seed)
-                if normalized_seed in queued:
+                normalized_seed_key = get_url_dedupe_key(normalized_seed)
+                if normalized_seed_key in queued:
                     continue
                 if not is_same_scope(
                     normalized_seed,
@@ -3145,7 +3191,7 @@ async def crawl(
                 ):
                     continue
                 if consume_crawl_budget(normalized_seed, normalized_budget):
-                    queued.add(normalized_seed)
+                    queued.add(normalized_seed_key)
                     await run_named_hook(
                         hooks,
                         "on_enqueue",
@@ -3159,22 +3205,23 @@ async def crawl(
 
         persist_state(completed=False)
 
-        while to_visit and len(visited) < max_pages:
-            remaining_slots = max_pages - len(visited)
+        while to_visit and processed_count < max_pages:
+            remaining_slots = max_pages - processed_count
             batch_concurrency = current_concurrency if autoscale_concurrency else max_concurrency
             batch_size = min(batch_concurrency, remaining_slots)
             batch = []
 
             while to_visit and len(batch) < batch_size:
                 current_url, current_depth = frontier_pop(to_visit, strategy=crawl_strategy)
-                queued.discard(current_url)
-                if current_url in visited:
+                current_url_key = get_url_dedupe_key(current_url)
+                queued.discard(current_url_key)
+                if current_url_key in visited:
                     continue
                 if current_depth > max_depth:
                     continue
                 if respect_robots_txt and robots_info["parser"] is not None:
                     if not robots_info["parser"].can_fetch(user_agent, current_url):
-                        visited.add(current_url)
+                        visited.add(current_url_key)
                         results.append(
                             {
                                 "url": current_url,
@@ -3182,8 +3229,9 @@ async def crawl(
                                 "blocked_by": "robots.txt",
                             }
                         )
+                        processed_count = len(results)
                         continue
-                visited.add(current_url)
+                visited.add(current_url_key)
                 batch.append((current_url, current_depth))
 
             if not batch:
@@ -3229,6 +3277,21 @@ async def crawl(
             )
 
             for result, links in page_results:
+                normalized_result_key = result.get("normalized_url")
+                dedupe_key = result.get("dedupe_key") or normalized_result_key
+                if normalized_result_key:
+                    visited.add(get_url_dedupe_key(normalized_result_key))
+                if dedupe_key:
+                    visited.add(get_url_dedupe_key(dedupe_key))
+                representative_url = result.get("final_url") or result.get("url")
+                if dedupe_key and representative_url:
+                    existing_url = seen_url_keys.get(dedupe_key)
+                    if existing_url and existing_url != representative_url:
+                        result["is_duplicate_url"] = True
+                        result["duplicate_of_url"] = existing_url
+                    else:
+                        seen_url_keys[dedupe_key] = representative_url
+
                 signature = result.get("signature")
                 if signature and signature in seen_signatures:
                     result["duplicate_of_signature"] = signature
@@ -3238,7 +3301,6 @@ async def crawl(
 
                 similarity_signature = result.get("similarity_signature")
                 similarity_value = parse_simhash(similarity_signature)
-                representative_url = result.get("final_url") or result.get("url")
                 if similarity_value is not None and representative_url and not result.get("is_duplicate"):
                     similarity_match = find_simhash_match(
                         similarity_value,
@@ -3260,7 +3322,10 @@ async def crawl(
                         )
 
                 results.append(result)
+                processed_count = len(results)
                 await run_named_hook(hooks, "on_result", result)
+                if result.get("is_duplicate_url"):
+                    continue
                 if (dedupe_by_signature and result.get("is_duplicate")) or (
                     dedupe_by_similarity and result.get("is_near_duplicate")
                 ):
@@ -3270,9 +3335,10 @@ async def crawl(
                     continue
                 for link in links:
                     normalized_link = strip_fragment(link)
-                    if normalized_link not in visited and normalized_link not in queued:
+                    normalized_link_key = get_url_dedupe_key(normalized_link)
+                    if normalized_link_key not in visited and normalized_link_key not in queued:
                         if consume_crawl_budget(normalized_link, normalized_budget):
-                            queued.add(normalized_link)
+                            queued.add(normalized_link_key)
                             await run_named_hook(
                                 hooks,
                                 "on_enqueue",
@@ -3389,6 +3455,7 @@ async def crawl(
         "include_technologies": include_technologies,
         "technology_aggression": technology_aggression,
         "pages_crawled": len(results),
+        "url_duplicate_count": sum(1 for item in results if item.get("is_duplicate_url")),
         "duplicate_count": sum(1 for item in results if item.get("is_duplicate")),
         "near_duplicate_count": sum(1 for item in results if item.get("is_near_duplicate")),
         "results": results,

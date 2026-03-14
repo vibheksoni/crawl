@@ -15,8 +15,11 @@ from crawl.sdk import export_dataset as sdk_export_dataset
 from crawl.sdk import extract as sdk_extract
 from crawl.sdk import feeds as sdk_feeds
 from crawl.sdk import forms as sdk_forms
+from crawl.sdk import get_canonical_dedupe_key as sdk_get_canonical_dedupe_key
 from crawl.sdk import get_technology_definition as sdk_get_technology_definition
+from crawl.sdk import get_url_dedupe_key as sdk_get_url_dedupe_key
 from crawl.sdk import map_site as sdk_map_site
+from crawl.sdk import normalize_url as sdk_normalize_url
 from crawl.sdk import query_page as sdk_query_page
 from crawl.sdk import research as sdk_research
 from crawl.sdk import scrape as sdk_scrape
@@ -962,6 +965,37 @@ async def dataset_export(
         output_format=output_format,
         collect_all_keys=collect_all_keys,
     )
+
+
+@mcp.tool()
+async def normalize_url(
+    url: str,
+    keep_tracking_params: bool = False,
+    keep_blank_values: bool = False,
+    keep_fragments: bool = False,
+    keep_query_order: bool = False,
+) -> dict:
+    """Normalize a URL for crawler dedupe and canonical comparison."""
+    normalized = sdk_normalize_url(
+        url,
+        drop_tracking_params=not keep_tracking_params,
+        keep_blank_values=keep_blank_values,
+        keep_fragments=keep_fragments,
+        sort_query_params=not keep_query_order,
+    )
+    return {
+        "input_url": url,
+        "normalized_url": normalized,
+        "dedupe_key": sdk_get_url_dedupe_key(
+            url,
+            drop_tracking_params=not keep_tracking_params,
+        ),
+        "canonical_dedupe_key": sdk_get_canonical_dedupe_key(
+            url,
+            canonical_url=normalized,
+            drop_tracking_params=not keep_tracking_params,
+        ),
+    }
 
 
 def run() -> None:
