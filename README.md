@@ -142,6 +142,8 @@ async def main() -> None:
         mode="http",
         include_headers=True,
         include_html=True,
+        initial_cookies=[{"name": "demo", "value": "yes"}],
+        include_cookies=True,
         include_app_state=True,
         include_contacts=True,
         include_technologies=True,
@@ -241,6 +243,7 @@ python cli.py fetch-page https://example.com --mode http --cache --cache-ttl 0 -
 python cli.py fetch-page https://www.python.org --mode browser --include-requests --resource-mode safe --consent-mode auto --interaction-mode auto --max-interactions 1 --session-dir .\\browser-session
 python cli.py fetch-page https://example.com --mode browser --include-api-payloads --max-api-payloads 10
 python cli.py fetch-page https://example.com --mode browser --resource-mode aggressive --block-url-pattern "*://*.doubleclick.net/*"
+python cli.py fetch-page https://example.com/account --mode browser --cookie-file .\\cookies.json --include-cookies
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --state-path .\\crawl-state.json
 python cli.py crawl https://docs.python.org/3/tutorial/ --mode fast --max-pages 25 --max-depth 2 --max-concurrency 6 --autoscale-concurrency --min-concurrency 2 --cpu-target-percent 75 --memory-target-percent 80 --include-technologies --technology-aggression 1
 python cli.py crawl https://example.com/docs --mode fast --max-pages 25 --dedupe-by-similarity --similarity-threshold 3
@@ -284,6 +287,8 @@ Browser-mode fetches can now capture structured `fetch` and `XMLHttpRequest` res
 Browser-mode fetches, scrapes, screenshots, and crawls can also opt into consent handling with `consent_mode` in the SDK or `--consent-mode` in the CLI/MCP layer. Supported modes are `auto`, `reject`, `accept`, `close`, and `none`. Performed actions are returned as `consent_actions` so callers can see whether a banner button was clicked or an overlay was removed. In a local same-origin iframe fixture benchmark run on March 13, 2026, the no-banner browser fetch average rose from about `3.5s` to about `6.5s` with `consent_mode="auto"`, which kept the fallback bounded while still catching delayed iframe banners.
 
 Browser-mode fetches, scrapes, extracts, queries, form scans, tech scans, and crawls can also opt into selective resource blocking with `resource_mode`, `blocked_resource_types`, `blocked_url_patterns`, and `bypass_service_worker`. The browser path now waits for bounded network idle instead of always sleeping a fixed two seconds after navigation, which reduces idle over-wait on light pages and lets blocked assets translate into real speedups. In a local asset-heavy fixture benchmark run on March 13, 2026, `resource_mode="safe"` cut browser fetch average time from about `4.1s` to about `2.8s` while reducing image requests from `6` to `0`.
+
+HTTP and browser flows can now also bootstrap cookies statelessly with `initial_cookies` in the SDK or `--cookie` / `--cookie-file` in the CLI. Structured result flows can opt into exported cookie jars with `include_cookies=True` or `--include-cookies`, which is useful for chaining login, consent, or session-establishment steps without turning on persistent `session_dir`. In a local auth-cookie fixture benchmark run on March 14, 2026, seeded HTTP cookie injection stayed in the same low single-digit millisecond range as the no-cookie baseline while returning the issued session cookie in the exported jar.
 
 Feed discovery can validate RSS, Atom, RDF, and JSON Feed endpoints from autodiscovery links, feed-like anchors, common feed paths, and a small scored internal spider pass. The result payload includes detected format, title, description, entry counts, and sample entry URLs for each validated feed.
 
@@ -337,6 +342,7 @@ crawl-mcp
 - `fetch`: loads a page and returns markdown or plain-text content using `auto`, `http`, or `browser` mode with optional SQLite caching and retry/backoff controls
 - `browser consent handling`: optionally dismisses consent banners and iframe-hosted cookie prompts, removes stubborn overlays, and returns `consent_actions` for traceability
 - `browser resource blocking`: optionally blocks images, fonts, media, and caller-selected URL patterns, returns `blocked_resources`, and uses bounded network-idle waiting instead of a fixed post-navigation sleep
+- `cookie bootstrap`: seeds structured cookies into HTTP or browser flows without requiring persistent browser profiles and can return exported cookies for follow-up requests
 - `crawl`: supports depth limits, include/exclude URL filters, explicit pattern modes, optional subdomain crawling, extra allowed domains, budgets, per-path delays, optional robots.txt enforcement, sitemap seeding, HTML sitemap discovery, configurable HTTP concurrency, `bfs` or `best_first` traversal, full resource discovery, normalized URL dedupe, canonical alias detection, duplicate-content suppression by exact signature or near-duplicate similarity, browser request capture, lightweight interaction, opt-in session persistence, retry/backoff handling, adaptive throttling, and SQLite caching
 - `crawl`: supports opt-in persistent crawl state files for autosave and resume across runs
 - `crawl`: supports opt-in autoscaled concurrency based on sampled CPU and memory pressure

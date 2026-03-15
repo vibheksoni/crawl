@@ -23,6 +23,7 @@ from .autoscale import choose_autoscaled_concurrency, sample_system_load
 from .browser import (
     browser_session,
     collect_api_payload_capture,
+    collect_browser_cookies,
     collect_request_capture,
     configure_page_request_settings,
     configure_page_resource_blocking,
@@ -30,6 +31,7 @@ from .browser import (
     get_resource_blocking_stats,
     handle_consent_dialogs,
     perform_basic_interactions,
+    seed_browser_cookies,
     start_network_idle_tracking,
     wait_for_page_network_idle,
 )
@@ -42,6 +44,7 @@ from .cache import (
 )
 from .chunking import rank_text_chunks
 from .contacts import extract_contacts_from_html
+from .cookies import apply_initial_http_cookies, export_http_cookies, normalize_cookie_payloads
 from .discovery import collect_sitemap_urls, discover_sitemap_urls_from_html, load_robots_rules
 from .crawl_state import load_crawl_state, save_crawl_state, serialize_frontier
 from .extract import extract_structured_data
@@ -565,6 +568,8 @@ async def request_page_with_verify_override(
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     retry_status_codes: list[int] | None = None,
@@ -577,6 +582,8 @@ async def request_page_with_verify_override(
         headers: Optional per-request headers.
         accept_invalid_certs: Whether to skip certificate verification.
         proxy_url: Optional proxy URL.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export session cookies after the request.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         retry_status_codes: Optional retryable status override.
@@ -588,6 +595,8 @@ async def request_page_with_verify_override(
     response = None
     ssl_fallback_used = False
     last_error = None
+    if initial_cookies:
+        apply_initial_http_cookies(session.cookies, initial_cookies, target_url=url)
 
     for attempt in range(max_retries + 1):
         try:
@@ -631,6 +640,7 @@ async def request_page_with_verify_override(
         "bytes_transferred": len(response.content or b""),
         "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
         "ssl_fallback_used": ssl_fallback_used,
+        "cookies": export_http_cookies(session.cookies) if include_cookies else None,
     }
 
 
@@ -774,6 +784,8 @@ async def request_browser_page(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     session_dir: str | None = None,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     capture_requests: bool = False,
     capture_api_payloads: bool = False,
     max_api_payloads: int = 20,
@@ -796,6 +808,8 @@ async def request_browser_page(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional proxy URL.
         session_dir: Optional persistent browser profile directory.
+        initial_cookies: Optional cookies to seed before navigation.
+        include_cookies: Whether to export browser cookies after navigation.
         capture_requests: Whether to capture browser requests.
         capture_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
@@ -819,6 +833,11 @@ async def request_browser_page(
         browser_args=browser_args,
         session_dir=session_dir,
     ) as browser:
+        seeded_cookies = await seed_browser_cookies(
+            browser,
+            initial_cookies=initial_cookies,
+            target_url=url,
+        )
         page = await browser.get("about:blank")
         if capture_requests or capture_api_payloads:
             await enable_request_capture(
@@ -857,6 +876,7 @@ async def request_browser_page(
                 await page.sleep(1)
 
         html = await page.get_content()
+        cookies = await collect_browser_cookies(browser) if include_cookies else None
         requests = await collect_request_capture(page) if capture_requests else []
         api_payloads = await collect_api_payload_capture(page) if capture_api_payloads else []
         return {
@@ -869,6 +889,8 @@ async def request_browser_page(
             "bytes_transferred": len(html.encode("utf-8")),
             "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 3),
             "ssl_fallback_used": False,
+            "seeded_cookies": seeded_cookies or None,
+            "cookies": cookies,
             "requests": requests,
             "api_payloads": api_payloads,
             "blocked_resources": get_resource_blocking_stats(page),
@@ -893,6 +915,7 @@ def build_page_result(
     api_payloads: list[dict] | None = None,
     blocked_resources: dict | None = None,
     network_idle: dict | None = None,
+    cookies: list[dict] | None = None,
     consent_actions: list[dict] | None = None,
     interactions: list[str] | None = None,
     app_state: dict | None = None,
@@ -967,6 +990,8 @@ def build_page_result(
         result["blocked_resources"] = blocked_resources
     if network_idle is not None:
         result["network_idle"] = network_idle
+    if cookies is not None:
+        result["cookies"] = cookies
     if consent_actions is not None:
         result["consent_actions"] = consent_actions
     if interactions is not None:
@@ -1006,6 +1031,8 @@ async def _fetch_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
@@ -1055,6 +1082,8 @@ async def _fetch_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
@@ -1131,6 +1160,8 @@ async def _fetch_page(
                 accept_invalid_certs=accept_invalid_certs,
                 proxy_url=selected_proxy,
                 session_dir=session_dir,
+                initial_cookies=initial_cookies,
+                include_cookies=include_cookies,
                 capture_requests=include_requests,
                 capture_api_payloads=include_api_payloads,
                 max_api_payloads=max_api_payloads,
@@ -1161,6 +1192,8 @@ async def _fetch_page(
                             headers=per_request_headers,
                             accept_invalid_certs=accept_invalid_certs,
                             proxy_url=selected_proxy,
+                            initial_cookies=initial_cookies,
+                            include_cookies=include_cookies,
                             max_retries=max_retries,
                             retry_backoff_ms=retry_backoff_ms,
                             retry_status_codes=retry_status_codes,
@@ -1172,6 +1205,8 @@ async def _fetch_page(
                         headers=per_request_headers,
                         accept_invalid_certs=accept_invalid_certs,
                         proxy_url=selected_proxy,
+                        initial_cookies=initial_cookies,
+                        include_cookies=include_cookies,
                         max_retries=max_retries,
                         retry_backoff_ms=retry_backoff_ms,
                         retry_status_codes=retry_status_codes,
@@ -1212,12 +1247,14 @@ async def _fetch_page(
                                     headers=request_headers,
                                 ) as rotated_session:
                                     rotated_data = await request_page_with_verify_override(
-                                        rotated_session,
-                                        url,
-                                        headers=per_request_headers,
-                                        accept_invalid_certs=accept_invalid_certs,
-                                        proxy_url=rotated_proxy,
-                                        max_retries=0,
+                                    rotated_session,
+                                    url,
+                                    headers=per_request_headers,
+                                    accept_invalid_certs=accept_invalid_certs,
+                                    proxy_url=rotated_proxy,
+                                    initial_cookies=initial_cookies,
+                                    include_cookies=include_cookies,
+                                    max_retries=0,
                                         retry_backoff_ms=retry_backoff_ms,
                                         retry_status_codes=retry_status_codes,
                                     )
@@ -1228,6 +1265,8 @@ async def _fetch_page(
                                     headers=per_request_headers,
                                     accept_invalid_certs=accept_invalid_certs,
                                     proxy_url=rotated_proxy,
+                                    initial_cookies=initial_cookies,
+                                    include_cookies=include_cookies,
                                     max_retries=0,
                                     retry_backoff_ms=retry_backoff_ms,
                                     retry_status_codes=retry_status_codes,
@@ -1255,6 +1294,8 @@ async def _fetch_page(
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
                     session_dir=session_dir,
+                    initial_cookies=initial_cookies,
+                    include_cookies=include_cookies,
                     capture_requests=include_requests,
                     capture_api_payloads=include_api_payloads,
                     max_api_payloads=max_api_payloads,
@@ -1283,6 +1324,8 @@ async def _fetch_page(
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
                     session_dir=session_dir,
+                    initial_cookies=initial_cookies,
+                    include_cookies=include_cookies,
                     capture_requests=include_requests,
                     capture_api_payloads=include_api_payloads,
                     max_api_payloads=max_api_payloads,
@@ -1311,7 +1354,9 @@ async def _fetch_page(
         page_data["fallback_used"] = fallback_used
         page_data["blocked_reason"] = blocked_reason
         if cache:
-            save_cached_page(url=url, mode=mode, page_data=page_data, cache_dir=cache_dir)
+            cached_page_data = dict(page_data)
+            cached_page_data.pop("cookies", None)
+            save_cached_page(url=url, mode=mode, page_data=cached_page_data, cache_dir=cache_dir)
     else:
         blocked_reason = page_data.get("blocked_reason")
 
@@ -1397,6 +1442,7 @@ async def _fetch_page(
         api_payloads=page_data.get("api_payloads") if include_api_payloads else None,
         blocked_resources=page_data.get("blocked_resources") or None,
         network_idle=page_data.get("network_idle") or None,
+        cookies=page_data.get("cookies") if include_cookies else None,
         consent_actions=page_data.get("consent_actions") or None,
         interactions=page_data.get("interactions") or None,
         app_state=app_state,
@@ -1427,6 +1473,8 @@ async def fetch_page(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
@@ -1473,6 +1521,8 @@ async def fetch_page(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
@@ -1520,6 +1570,8 @@ async def fetch_page(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
@@ -1555,6 +1607,7 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -1581,6 +1634,7 @@ async def fetch(
         url: URL to fetch.
         output_format: Either ``markdown`` or ``text``.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -1608,6 +1662,7 @@ async def fetch(
         url=url,
         mode=mode,
         include_html=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -1636,6 +1691,8 @@ async def scrape(
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     follow_pagination: bool = False,
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
@@ -1667,6 +1724,8 @@ async def scrape(
         only_main_content: Whether to prefer main content.
         query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         follow_pagination: Whether article extraction should follow likely next-page links.
         article_max_pages: Maximum article pages to merge when pagination is enabled.
         max_api_payloads: Maximum API payload records to retain.
@@ -1702,6 +1761,8 @@ async def scrape(
         include_contacts=bool(formats and "contacts" in formats),
         include_technologies=bool(formats and "technologies" in formats),
         include_api_payloads=bool(formats and "api_payloads" in formats),
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
         resource_mode=resource_mode,
@@ -1735,6 +1796,8 @@ async def scrape(
             mode=mode,
             follow_pagination=True,
             max_pages=article_max_pages,
+            initial_cookies=initial_cookies,
+            include_cookies=include_cookies,
             max_api_payloads=max_api_payloads,
             max_api_payload_bytes=max_api_payload_bytes,
             resource_mode=resource_mode,
@@ -1762,6 +1825,8 @@ async def scrape(
 async def contacts(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -1785,6 +1850,8 @@ async def contacts(
     Args:
         url: URL to inspect.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -1810,6 +1877,8 @@ async def contacts(
         url=url,
         mode=mode,
         include_contacts=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -1828,11 +1897,14 @@ async def contacts(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
-    return {
+    result = {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
         "contacts": page.get("contacts", {}),
     }
+    if include_cookies:
+        result["cookies"] = page.get("cookies", [])
+    return result
 
 
 async def tech(
@@ -1841,6 +1913,8 @@ async def tech(
     max_pages: int = 1,
     max_depth: int = 0,
     allow_subdomains: bool = False,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -1868,6 +1942,8 @@ async def tech(
         max_pages: Maximum pages to fingerprint.
         max_depth: Maximum crawl depth when scanning multiple pages.
         allow_subdomains: Whether subdomains are in scope for multi-page scans.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -1902,6 +1978,8 @@ async def tech(
                     url=candidate,
                     mode=mode,
                     include_technologies=True,
+                    initial_cookies=normalize_cookie_payloads(initial_cookies),
+                    include_cookies=include_cookies,
                     resource_mode=resource_mode,
                     blocked_resource_types=blocked_resource_types,
                     blocked_url_patterns=blocked_url_patterns,
@@ -1929,13 +2007,14 @@ async def tech(
                     }
                 )
                 continue
-            results.append(
-                {
-                    "url": page["final_url"],
-                    "title": page.get("title", ""),
-                    "technologies": page.get("technologies", {}),
-                }
-            )
+            item = {
+                "url": page["final_url"],
+                "title": page.get("title", ""),
+                "technologies": page.get("technologies", {}),
+            }
+            if include_cookies:
+                item["cookies"] = page.get("cookies", [])
+            results.append(item)
         return {
             "start_url": url,
             "pages_scanned": len([item for item in results if "error" not in item]),
@@ -1949,6 +2028,8 @@ async def tech(
         max_depth=max_depth,
         mode="browser" if mode == "browser" else "auto" if mode == "auto" else "fast",
         allow_subdomains=allow_subdomains,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         include_technologies=True,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
@@ -1974,6 +2055,7 @@ async def tech(
             "url": item.get("final_url") or item.get("url"),
             "title": item.get("title", ""),
             "technologies": item.get("technologies", {}),
+            **({"cookies": item.get("cookies", [])} if include_cookies else {}),
         }
         for item in crawl_result.get("results", [])
         if "error" not in item and "blocked_by" not in item
@@ -1992,6 +2074,8 @@ async def tech_grep(
     regex: str | None = None,
     search: str = "body",
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -2018,6 +2102,8 @@ async def tech_grep(
         regex: Optional regex pattern.
         search: Search context.
         mode: Fetch mode.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -2044,6 +2130,8 @@ async def tech_grep(
         mode=mode,
         include_html=True,
         include_headers=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -2078,6 +2166,8 @@ async def batch_scrape(
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     max_concurrency: int = 4,
     follow_pagination: bool = False,
     article_max_pages: int = 3,
@@ -2110,6 +2200,8 @@ async def batch_scrape(
         only_main_content: Whether to prefer main content.
         query: Optional relevance query for fit markdown.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after each request.
         max_concurrency: Maximum concurrent scrape tasks.
         follow_pagination: Whether article extraction should follow likely next-page links.
         article_max_pages: Maximum article pages to merge when pagination is enabled.
@@ -2148,6 +2240,8 @@ async def batch_scrape(
                     only_main_content=only_main_content,
                     query=query,
                     mode=mode,
+                    initial_cookies=initial_cookies,
+                    include_cookies=include_cookies,
                     follow_pagination=follow_pagination,
                     article_max_pages=article_max_pages,
                     max_api_payloads=max_api_payloads,
@@ -2193,6 +2287,8 @@ async def query_page(
     url: str,
     query: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -2217,6 +2313,8 @@ async def query_page(
         url: URL to query.
         query: Relevance query.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -2244,6 +2342,8 @@ async def query_page(
         include_html=True,
         include_app_state=True,
         include_contacts=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -2272,6 +2372,8 @@ async def query_page(
     app_state = page.get("app_state", {})
     result["contacts"] = page.get("contacts", {})
     result["app_state_summary"] = app_state.get("summary", {})
+    if include_cookies:
+        result["cookies"] = page.get("cookies", [])
 
     app_state_text = render_app_state_text(app_state)
     if not app_state_text:
@@ -2457,6 +2559,8 @@ async def map_site(
     search: str | None = None,
     limit: int = 100,
     mode: Literal["fast", "auto"] = "fast",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     allow_subdomains: bool = False,
     allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
@@ -2485,6 +2589,8 @@ async def map_site(
         search: Optional relevance query.
         limit: Maximum pages to include.
         mode: Crawl strategy.
+        initial_cookies: Optional cookies to seed before requests.
+        include_cookies: Whether to export cookies in mapped page results.
         allow_subdomains: Whether subdomains should be considered in-scope.
         allowed_domains: Additional explicitly allowed domains.
         include_patterns: Optional include patterns.
@@ -2513,6 +2619,8 @@ async def map_site(
         url=url,
         max_pages=limit,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         max_depth=limit,
         allow_subdomains=allow_subdomains,
         allowed_domains=allowed_domains,
@@ -2545,6 +2653,8 @@ async def map_site(
             "title": result.get("title", ""),
             "description": result.get("description", ""),
         }
+        if include_cookies:
+            item["cookies"] = result.get("cookies", [])
         if search:
             item["score"] = score_map_result(result, search=search)
         items.append(item)
@@ -2573,6 +2683,8 @@ async def extract(
     url: str,
     schema: dict,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -2597,6 +2709,8 @@ async def extract(
         url: URL to extract from.
         schema: CSS-based extraction schema.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -2622,6 +2736,8 @@ async def extract(
         url=url,
         mode=mode,
         include_html=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -2641,17 +2757,22 @@ async def extract(
         retry_backoff_ms=retry_backoff_ms,
     )
 
-    return {
+    result = {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
         "schema": schema,
         "data": extract_structured_data(page["html"], page["final_url"], schema),
     }
+    if include_cookies:
+        result["cookies"] = page.get("cookies", [])
+    return result
 
 
 async def forms(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -2676,6 +2797,8 @@ async def forms(
     Args:
         url: URL to inspect.
         mode: Fetch strategy.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -2704,6 +2827,8 @@ async def forms(
         include_html=False,
         include_forms=True,
         include_form_fill_suggestions=include_fill_suggestions,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -2722,12 +2847,15 @@ async def forms(
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
-    return {
+    result = {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
         "forms": page.get("forms", []),
         "count": len(page.get("forms", [])),
     }
+    if include_cookies:
+        result["cookies"] = page.get("cookies", [])
+    return result
 
 
 async def article(
@@ -2735,6 +2863,8 @@ async def article(
     mode: Literal["auto", "http", "browser"] = "auto",
     follow_pagination: bool = False,
     max_pages: int = 3,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -2760,6 +2890,8 @@ async def article(
         mode: Fetch strategy.
         follow_pagination: Whether to follow likely next-page links for split articles.
         max_pages: Maximum article pages to merge.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -2786,6 +2918,8 @@ async def article(
         url=url,
         mode=mode,
         include_html=True,
+        initial_cookies=normalize_cookie_payloads(initial_cookies),
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -2855,6 +2989,8 @@ async def article(
             url=next_candidate["url"],
             mode=mode,
             include_html=True,
+            initial_cookies=normalize_cookie_payloads(initial_cookies),
+            include_cookies=include_cookies,
             resource_mode=resource_mode,
             blocked_resource_types=blocked_resource_types,
             blocked_url_patterns=blocked_url_patterns,
@@ -2943,11 +3079,14 @@ async def article(
     article_payload["pages"] = page_entries
     article_payload["pagination_followed"] = len(page_entries) > 1
     article_payload["pagination_stop_reason"] = pagination_stop_reason
-    return {
+    result = {
         "url": page["final_url"],
         "metadata": page.get("metadata", {}),
         "article": article_payload,
     }
+    if include_cookies:
+        result["cookies"] = page.get("cookies", [])
+    return result
 
 
 async def feeds(
@@ -2957,6 +3096,8 @@ async def feeds(
     spider_limit: int = 10,
     max_candidates: int = 20,
     max_feeds: int = 10,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -2978,6 +3119,8 @@ async def feeds(
         spider_limit: Maximum internal pages to spider.
         max_candidates: Maximum feed candidates to validate.
         max_feeds: Maximum validated feeds to return.
+        initial_cookies: Optional cookies to seed before requests.
+        include_cookies: Whether to export cookies in fetched page payloads.
         cache: Whether to use disk caching.
         cache_dir: Optional cache directory.
         cache_ttl_seconds: Optional cache TTL.
@@ -3010,6 +3153,8 @@ async def feeds(
                 mode=mode,
                 include_html=True,
                 include_headers=True,
+                initial_cookies=normalize_cookie_payloads(initial_cookies),
+                include_cookies=include_cookies,
                 cache=cache,
                 cache_dir=cache_dir,
                 cache_ttl_seconds=cache_ttl_seconds,
@@ -3050,6 +3195,8 @@ async def feeds(
             "candidate_count": 0,
             "is_feed": analysis.get("is_feed", False),
         }
+        if include_cookies:
+            page_entry["cookies"] = page.get("cookies", [])
 
         if analysis.get("is_feed"):
             validated_feeds.append(
@@ -3160,6 +3307,8 @@ async def crawl_one_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -3204,6 +3353,8 @@ async def crawl_one_page(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -3250,6 +3401,8 @@ async def crawl_one_page(
             include_api_payloads=include_api_payloads,
             max_api_payloads=max_api_payloads,
             max_api_payload_bytes=max_api_payload_bytes,
+            initial_cookies=normalize_cookie_payloads(initial_cookies),
+            include_cookies=include_cookies,
             resource_mode=resource_mode,
             blocked_resource_types=blocked_resource_types,
             blocked_url_patterns=blocked_url_patterns,
@@ -3316,6 +3469,8 @@ async def crawl(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -3379,6 +3534,8 @@ async def crawl(
         include_api_payloads: Whether to capture fetch/XHR response payloads.
         max_api_payloads: Maximum API payload records to retain per page.
         max_api_payload_bytes: Maximum payload text length to retain per response.
+        initial_cookies: Optional cookies to seed before requests.
+        include_cookies: Whether to export cookies after page fetches.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -3549,6 +3706,8 @@ async def crawl(
                         start_url,
                         accept_invalid_certs=accept_invalid_certs,
                         proxy_url=pick_proxy(normalized_proxy_urls, 0),
+                        initial_cookies=normalize_cookie_payloads(initial_cookies),
+                        include_cookies=include_cookies,
                     )
                     candidate_sitemaps.extend(
                         discover_sitemap_urls_from_html(root_page["html"], root_page["final_url"])
@@ -3660,6 +3819,8 @@ async def crawl(
                         include_api_payloads=include_api_payloads,
                         max_api_payloads=max_api_payloads,
                         max_api_payload_bytes=max_api_payload_bytes,
+                        initial_cookies=initial_cookies,
+                        include_cookies=include_cookies,
                         resource_mode=resource_mode,
                         blocked_resource_types=blocked_resource_types,
                         blocked_url_patterns=blocked_url_patterns,
@@ -3844,6 +4005,7 @@ async def crawl(
         "path_delays": normalized_delay_map,
         "include_requests": include_requests,
         "include_api_payloads": include_api_payloads,
+        "include_cookies": include_cookies,
         "resource_mode": resource_mode,
         "blocked_resource_types": blocked_resource_types or [],
         "blocked_url_patterns": blocked_url_patterns or [],
@@ -3880,6 +4042,7 @@ async def screenshot(
     width: int = -1,
     height: int = -1,
     full_page: bool = True,
+    initial_cookies: list[dict] | None = None,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
 ) -> bytes:
@@ -3890,6 +4053,7 @@ async def screenshot(
         width: Requested viewport width, or ``-1`` for auto.
         height: Requested viewport height, or ``-1`` for auto.
         full_page: Whether to capture the full page.
+        initial_cookies: Optional cookies to seed before navigation.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
 
@@ -3901,6 +4065,11 @@ async def screenshot(
 
     try:
         async with browser_session(headless=False) as browser:
+            await seed_browser_cookies(
+                browser,
+                initial_cookies=normalize_cookie_payloads(initial_cookies),
+                target_url=url,
+            )
             page = await browser.get(url)
             await page.sleep(2)
 

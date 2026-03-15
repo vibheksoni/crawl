@@ -111,6 +111,7 @@ async def fetch(
     url: str,
     output_format: Literal["markdown", "text"] = "markdown",
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -153,6 +154,7 @@ async def fetch(
         url=url,
         output_format=output_format,
         mode=mode,
+        initial_cookies=initial_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -180,6 +182,8 @@ async def scrape(
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     follow_pagination: bool = False,
     article_max_pages: int = 3,
     max_api_payloads: int = 20,
@@ -210,6 +214,8 @@ async def scrape(
         only_main_content=only_main_content,
         query=query,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         follow_pagination=follow_pagination,
         article_max_pages=article_max_pages,
         max_api_payloads=max_api_payloads,
@@ -242,6 +248,8 @@ async def batch_scrape(
     only_main_content: bool = True,
     query: str | None = None,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     max_concurrency: int = 4,
     follow_pagination: bool = False,
     article_max_pages: int = 3,
@@ -272,6 +280,8 @@ async def batch_scrape(
         only_main_content=only_main_content,
         query=query,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         max_concurrency=max_concurrency,
         follow_pagination=follow_pagination,
         article_max_pages=article_max_pages,
@@ -303,6 +313,8 @@ async def map(
     search: str | None = None,
     limit: int = 100,
     mode: Literal["fast", "auto"] = "fast",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     allow_subdomains: bool = False,
     allowed_domains: list[str] | None = None,
     include_patterns: list[str] | None = None,
@@ -330,6 +342,8 @@ async def map(
         search=search,
         limit=limit,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         allow_subdomains=allow_subdomains,
         allowed_domains=allowed_domains,
         include_patterns=include_patterns,
@@ -358,6 +372,8 @@ async def query(
     url: str,
     query: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -381,6 +397,8 @@ async def query(
         url=url,
         query=query,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -450,6 +468,8 @@ async def extract(
     url: str,
     schema: dict,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -473,6 +493,8 @@ async def extract(
         url=url,
         schema=schema,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -497,6 +519,8 @@ async def extract(
 async def forms(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -520,6 +544,8 @@ async def forms(
     return await sdk_forms(
         url=url,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -547,6 +573,8 @@ async def article(
     mode: Literal["auto", "http", "browser"] = "auto",
     follow_pagination: bool = False,
     max_pages: int = 3,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -571,6 +599,8 @@ async def article(
         mode=mode,
         follow_pagination=follow_pagination,
         max_pages=max_pages,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -599,6 +629,8 @@ async def feeds(
     spider_limit: int = 10,
     max_candidates: int = 20,
     max_feeds: int = 10,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     cache: bool = False,
     cache_dir: str | None = None,
     cache_ttl_seconds: int | None = None,
@@ -619,6 +651,8 @@ async def feeds(
         spider_limit=spider_limit,
         max_candidates=max_candidates,
         max_feeds=max_feeds,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         cache=cache,
         cache_dir=cache_dir,
         cache_ttl_seconds=cache_ttl_seconds,
@@ -637,6 +671,8 @@ async def feeds(
 async def contacts(
     url: str,
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -659,6 +695,8 @@ async def contacts(
     return await sdk_contacts(
         url=url,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -686,6 +724,8 @@ async def tech(
     max_pages: int = 1,
     max_depth: int = 0,
     allow_subdomains: bool = False,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -712,6 +752,8 @@ async def tech(
         max_pages=max_pages,
         max_depth=max_depth,
         allow_subdomains=allow_subdomains,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -762,6 +804,8 @@ async def tech_grep(
     regex: str | None = None,
     search: str = "body",
     mode: Literal["auto", "http", "browser"] = "auto",
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -787,6 +831,8 @@ async def tech_grep(
         regex=regex,
         search=search,
         mode=mode,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -821,6 +867,8 @@ async def fetch_page(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -860,6 +908,8 @@ async def fetch_page(
         pattern_mode: Pattern matching mode.
         full_resources: Whether to include resource URLs in discovery.
         include_requests: Whether to capture browser requests.
+        initial_cookies: Optional cookies to seed before the request.
+        include_cookies: Whether to export cookies after the request.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -902,6 +952,8 @@ async def fetch_page(
         include_api_payloads=include_api_payloads,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -954,6 +1006,8 @@ async def crawl(
     include_api_payloads: bool = False,
     max_api_payloads: int = 20,
     max_api_payload_bytes: int = 200000,
+    initial_cookies: list[dict] | None = None,
+    include_cookies: bool = False,
     resource_mode: Literal["none", "safe", "aggressive"] = "none",
     blocked_resource_types: list[str] | None = None,
     blocked_url_patterns: list[str] | None = None,
@@ -1010,6 +1064,8 @@ async def crawl(
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
         include_technologies: Whether to extract technology fingerprints for each page.
         include_requests: Whether to capture browser requests.
+        initial_cookies: Optional cookies to seed before requests.
+        include_cookies: Whether to export cookies after page fetches.
         resource_mode: Browser resource blocking preset.
         blocked_resource_types: Optional extra browser resource types to block.
         blocked_url_patterns: Optional browser URL wildcard patterns or hostnames to block.
@@ -1071,6 +1127,8 @@ async def crawl(
         include_api_payloads=include_api_payloads,
         max_api_payloads=max_api_payloads,
         max_api_payload_bytes=max_api_payload_bytes,
+        initial_cookies=initial_cookies,
+        include_cookies=include_cookies,
         resource_mode=resource_mode,
         blocked_resource_types=blocked_resource_types,
         blocked_url_patterns=blocked_url_patterns,
@@ -1116,6 +1174,7 @@ async def screenshot(
     width: int = -1,
     height: int = -1,
     full_page: bool = True,
+    initial_cookies: list[dict] | None = None,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
 ) -> Image:
@@ -1126,6 +1185,7 @@ async def screenshot(
         width: Requested viewport width, or ``-1`` for auto.
         height: Requested viewport height, or ``-1`` for auto.
         full_page: Whether to capture the full page.
+        initial_cookies: Optional cookies to seed before navigation.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
 
@@ -1137,6 +1197,7 @@ async def screenshot(
         width=width,
         height=height,
         full_page=full_page,
+        initial_cookies=initial_cookies,
         consent_mode=consent_mode,
         max_consent_actions=max_consent_actions,
     )

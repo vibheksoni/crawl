@@ -5,9 +5,11 @@ import asyncio
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 from crawl.cli.output import normalize_output_rows, render_template, render_template_details, select_fields, store_selected_fields
 from crawl.sdk import append_dataset_rows, article, batch_scrape, benchmark_fast_crawl, build_plugin_signature_file, contacts, crawl, export_dataset, extract, fetch, fetch_page, feeds, forms, get_canonical_dedupe_key, get_technology_definition, get_url_dedupe_key, map_site, normalize_url, query_page, research, scrape, screenshot, search_technology_definitions, tech, tech_grep, update_technology_definitions, websearch
+from crawl.sdk.cookies import merge_cookie_sources
 from crawl.sdk.resource_blocking import RESOURCE_MODE_CHOICES, RESOURCE_TYPE_CHOICES
 
 
@@ -56,16 +58,37 @@ def parse_header_entries(entries: list[str] | None) -> dict[str, str] | None:
     return headers
 
 
-def load_json_file(path: str) -> dict:
+def load_json_file(path: str) -> Any:
     """Load a JSON file from disk.
 
     Args:
         path: JSON file path.
 
     Returns:
-        Parsed JSON object.
+        Parsed JSON value.
     """
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def parse_initial_cookies(
+    cookie_entries: list[str] | None = None,
+    cookie_file: str | None = None,
+) -> list[dict] | None:
+    """Parse CLI cookie inputs into normalized cookie payloads.
+
+    Args:
+        cookie_entries: Repeated ``name=value`` cookie entries.
+        cookie_file: Optional JSON cookie file path.
+
+    Returns:
+        Normalized cookie payload list or ``None``.
+    """
+    cookie_file_payload = load_json_file(cookie_file) if cookie_file else None
+    cookies = merge_cookie_sources(
+        cookie_entries=cookie_entries,
+        cookie_file_payload=cookie_file_payload,
+    )
+    return cookies or None
 
 
 def add_common_output_options(parser: argparse.ArgumentParser) -> None:
@@ -115,6 +138,19 @@ def add_resource_blocking_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--bypass-service-worker", action="store_true", dest="bypass_service_worker")
 
 
+def add_cookie_options(parser: argparse.ArgumentParser, include_export: bool = False) -> None:
+    """Add cookie bootstrap and export options to a CLI parser.
+
+    Args:
+        parser: Target subparser.
+        include_export: Whether exported cookies should be supported.
+    """
+    parser.add_argument("--cookie", action="append", dest="cookie_entries")
+    parser.add_argument("--cookie-file", dest="cookie_file")
+    if include_export:
+        parser.add_argument("--include-cookies", action="store_true", dest="include_cookies")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser.
 
@@ -161,6 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--cache-dir", dest="cache_dir")
     fetch_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(fetch_parser)
+    add_cookie_options(fetch_parser)
     add_consent_options(fetch_parser)
     add_resource_blocking_options(fetch_parser)
     fetch_parser.add_argument("--user-agent", dest="user_agent")
@@ -187,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_cookie_options(scrape_parser, include_export=True)
     add_consent_options(scrape_parser)
     add_resource_blocking_options(scrape_parser)
     scrape_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -218,6 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_scrape_parser.add_argument("--article-max-pages", type=int, default=3, dest="article_max_pages")
     batch_scrape_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     batch_scrape_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_cookie_options(batch_scrape_parser, include_export=True)
     add_consent_options(batch_scrape_parser)
     add_resource_blocking_options(batch_scrape_parser)
     batch_scrape_parser.add_argument("--cache", action="store_true", dest="cache")
@@ -250,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     map_parser.add_argument("--cache-dir", dest="cache_dir")
     map_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(map_parser)
+    add_cookie_options(map_parser, include_export=True)
     map_parser.add_argument("--header", action="append", dest="header_entries")
     map_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
     map_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
@@ -266,6 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--cache-dir", dest="cache_dir")
     extract_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(extract_parser)
+    add_cookie_options(extract_parser, include_export=True)
     add_consent_options(extract_parser)
     add_resource_blocking_options(extract_parser)
     extract_parser.add_argument("--user-agent", dest="user_agent")
@@ -283,6 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
     forms_parser.add_argument("--cache-dir", dest="cache_dir")
     forms_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(forms_parser)
+    add_cookie_options(forms_parser, include_export=True)
     add_consent_options(forms_parser)
     add_resource_blocking_options(forms_parser)
     forms_parser.add_argument("--user-agent", dest="user_agent")
@@ -303,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     article_parser.add_argument("--cache-dir", dest="cache_dir")
     article_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(article_parser)
+    add_cookie_options(article_parser, include_export=True)
     add_consent_options(article_parser)
     add_resource_blocking_options(article_parser)
     article_parser.add_argument("--user-agent", dest="user_agent")
@@ -324,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     feeds_parser.add_argument("--cache-dir", dest="cache_dir")
     feeds_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(feeds_parser)
+    add_cookie_options(feeds_parser, include_export=True)
     feeds_parser.add_argument("--user-agent", dest="user_agent")
     feeds_parser.add_argument("--header", action="append", dest="header_entries")
     feeds_parser.add_argument("--accept-invalid-certs", action="store_true", dest="accept_invalid_certs")
@@ -339,6 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
     contacts_parser.add_argument("--cache-dir", dest="cache_dir")
     contacts_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(contacts_parser)
+    add_cookie_options(contacts_parser, include_export=True)
     add_consent_options(contacts_parser)
     add_resource_blocking_options(contacts_parser)
     contacts_parser.add_argument("--user-agent", dest="user_agent")
@@ -357,6 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--cache-dir", dest="cache_dir")
     query_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(query_parser)
+    add_cookie_options(query_parser, include_export=True)
     add_consent_options(query_parser)
     add_resource_blocking_options(query_parser)
     query_parser.add_argument("--user-agent", dest="user_agent")
@@ -377,6 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(tech_parser)
+    add_cookie_options(tech_parser, include_export=True)
     add_consent_options(tech_parser)
     add_resource_blocking_options(tech_parser)
     tech_parser.add_argument("--user-agent", dest="user_agent")
@@ -414,6 +461,7 @@ def build_parser() -> argparse.ArgumentParser:
     tech_grep_parser.add_argument("--cache-dir", dest="cache_dir")
     tech_grep_parser.add_argument("--cache-ttl", type=int, dest="cache_ttl_seconds")
     add_cache_revalidate_option(tech_grep_parser)
+    add_cookie_options(tech_grep_parser, include_export=True)
     add_consent_options(tech_grep_parser)
     add_resource_blocking_options(tech_grep_parser)
     tech_grep_parser.add_argument("--user-agent", dest="user_agent")
@@ -457,6 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_page_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
     fetch_page_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     fetch_page_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_cookie_options(fetch_page_parser, include_export=True)
     add_consent_options(fetch_page_parser)
     add_resource_blocking_options(fetch_page_parser)
     fetch_page_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
@@ -503,6 +552,7 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--include-api-payloads", action="store_true", dest="include_api_payloads")
     crawl_parser.add_argument("--max-api-payloads", type=int, default=20, dest="max_api_payloads")
     crawl_parser.add_argument("--max-api-payload-bytes", type=int, default=200000, dest="max_api_payload_bytes")
+    add_cookie_options(crawl_parser, include_export=True)
     add_consent_options(crawl_parser)
     add_resource_blocking_options(crawl_parser)
     crawl_parser.add_argument("--interaction-mode", choices=["none", "auto"], default="none")
@@ -540,6 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot_parser.add_argument("--width", type=int, default=-1)
     screenshot_parser.add_argument("--height", type=int, default=-1)
     screenshot_parser.add_argument("--no-full-page", action="store_true", dest="no_full_page")
+    add_cookie_options(screenshot_parser)
     add_consent_options(screenshot_parser)
     screenshot_parser.add_argument("--output", default="screenshot.jpg", help="Output image path.")
 
@@ -586,6 +637,11 @@ async def run_command(args: argparse.Namespace):
     Returns:
         Command result object or string.
     """
+    initial_cookies = parse_initial_cookies(
+        getattr(args, "cookie_entries", None),
+        getattr(args, "cookie_file", None),
+    )
+
     if args.command == "websearch":
         provider = args.provider
         if args.searxng_url and provider == "google":
@@ -617,6 +673,7 @@ async def run_command(args: argparse.Namespace):
             args.url,
             output_format=args.output_format,
             mode=args.mode,
+            initial_cookies=initial_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -641,6 +698,8 @@ async def run_command(args: argparse.Namespace):
             formats=args.formats,
             only_main_content=args.only_main_content,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             follow_pagination=args.follow_pagination,
             article_max_pages=args.article_max_pages,
             max_api_payloads=args.max_api_payloads,
@@ -668,6 +727,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             args.query,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -693,6 +754,8 @@ async def run_command(args: argparse.Namespace):
             max_pages=args.max_pages,
             max_depth=args.max_depth,
             allow_subdomains=args.allow_subdomains,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -735,6 +798,8 @@ async def run_command(args: argparse.Namespace):
             regex=args.regex,
             search=args.search,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -780,6 +845,8 @@ async def run_command(args: argparse.Namespace):
             formats=args.formats,
             only_main_content=args.only_main_content,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             max_concurrency=args.max_concurrency,
             follow_pagination=args.follow_pagination,
             article_max_pages=args.article_max_pages,
@@ -809,6 +876,8 @@ async def run_command(args: argparse.Namespace):
             search=args.search,
             limit=args.limit,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             allow_subdomains=args.allow_subdomains,
             allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
@@ -834,6 +903,8 @@ async def run_command(args: argparse.Namespace):
             args.url,
             schema=load_json_file(args.schema_file),
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -856,6 +927,8 @@ async def run_command(args: argparse.Namespace):
         return await forms(
             args.url,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -881,6 +954,8 @@ async def run_command(args: argparse.Namespace):
             mode=args.mode,
             follow_pagination=args.follow_pagination,
             max_pages=args.max_pages,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -903,6 +978,8 @@ async def run_command(args: argparse.Namespace):
         return await feeds(
             args.url,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             spider_depth=args.spider_depth,
             spider_limit=args.spider_limit,
             max_candidates=args.max_candidates,
@@ -923,6 +1000,8 @@ async def run_command(args: argparse.Namespace):
         return await contacts(
             args.url,
             mode=args.mode,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             resource_mode=args.resource_mode,
             blocked_resource_types=args.blocked_resource_types,
             blocked_url_patterns=args.blocked_url_patterns,
@@ -949,6 +1028,8 @@ async def run_command(args: argparse.Namespace):
             allowed_domains=args.allowed_domains,
             include_patterns=args.include_patterns,
             exclude_patterns=args.exclude_patterns,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             pattern_mode=args.pattern_mode,
             full_resources=args.full_resources,
             include_requests=args.include_requests,
@@ -989,6 +1070,8 @@ async def run_command(args: argparse.Namespace):
             mode=args.mode,
             crawl_strategy=args.crawl_strategy,
             crawl_query=args.crawl_query,
+            initial_cookies=initial_cookies,
+            include_cookies=args.include_cookies,
             max_concurrency=args.max_concurrency,
             max_depth=args.max_depth,
             allow_subdomains=args.allow_subdomains,
@@ -1048,6 +1131,7 @@ async def run_command(args: argparse.Namespace):
             width=args.width,
             height=args.height,
             full_page=not args.no_full_page,
+            initial_cookies=initial_cookies,
             consent_mode=args.consent_mode,
             max_consent_actions=args.max_consent_actions,
         )

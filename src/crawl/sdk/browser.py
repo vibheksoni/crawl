@@ -13,6 +13,7 @@ import nodriver.cdp.fetch as fetch_cdp
 import nodriver.cdp.network as network_cdp
 import nodriver.cdp.page as page_cdp
 import nodriver.cdp.security as security_cdp
+import nodriver.cdp.storage as storage_cdp
 import nodriver.core.util as nodriver_util
 
 from .consent import (
@@ -24,6 +25,7 @@ from .consent import (
     is_consent_context,
     score_consent_label,
 )
+from .cookies import build_browser_cookie_params, export_browser_cookies
 from .resource_blocking import (
     normalize_blocked_url_patterns,
     resolve_blocked_resource_type_names,
@@ -219,6 +221,58 @@ def build_capture_script(
   }};
 }})();
 """
+
+
+def get_browser_cookie_connection(browser):
+    """Return the best available browser connection for cookie commands.
+
+    Args:
+        browser: Browser instance.
+
+    Returns:
+        An open tab connection or the browser root connection.
+    """
+    for tab in browser.tabs:
+        if not tab.closed:
+            return tab
+    return browser.connection
+
+
+async def seed_browser_cookies(
+    browser,
+    initial_cookies: list[dict] | None = None,
+    target_url: str | None = None,
+) -> list[dict]:
+    """Seed browser cookies without requiring a persistent user-data directory.
+
+    Args:
+        browser: Browser instance.
+        initial_cookies: Normalized cookie payloads.
+        target_url: Optional target URL used to infer cookie scope.
+
+    Returns:
+        Seeded cookie payloads.
+    """
+    cookie_params = build_browser_cookie_params(initial_cookies or [], target_url=target_url)
+    if not cookie_params:
+        return []
+    connection = get_browser_cookie_connection(browser)
+    await connection.send(storage_cdp.set_cookies(cookie_params))
+    return initial_cookies or []
+
+
+async def collect_browser_cookies(browser) -> list[dict]:
+    """Collect browser cookies as normalized payloads.
+
+    Args:
+        browser: Browser instance.
+
+    Returns:
+        Normalized exported cookie payloads.
+    """
+    connection = get_browser_cookie_connection(browser)
+    cookies = await connection.send(storage_cdp.get_cookies())
+    return export_browser_cookies(cookies)
 
 
 def is_api_resource_type(resource_type) -> bool:
