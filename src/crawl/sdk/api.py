@@ -3199,14 +3199,15 @@ async def feeds(
             page_entry["cookies"] = page.get("cookies", [])
 
         if analysis.get("is_feed"):
-            validated_feeds.append(
-                {
-                    **analysis,
-                    "sources": ["self"],
-                    "score": 200,
-                    "discovered_from": [final_url],
-                }
-            )
+            feed_item = {
+                **analysis,
+                "sources": ["self"],
+                "score": 200,
+                "discovered_from": [final_url],
+            }
+            if include_cookies:
+                feed_item["cookies"] = page.get("cookies", [])
+            validated_feeds.append(feed_item)
             seen_feed_urls.add(final_url_key)
             scanned_page_keys.add(final_url_key)
             scanned_pages.append(page_entry)
@@ -3261,7 +3262,10 @@ async def feeds(
             continue
 
         seen_feed_urls.add(validated_feed_url_key)
-        validated_feeds.append({**candidate, **analysis})
+        feed_item = {**candidate, **analysis}
+        if include_cookies:
+            feed_item["cookies"] = page.get("cookies", [])
+        validated_feeds.append(feed_item)
         if len(validated_feeds) >= max(1, max_feeds):
             break
 

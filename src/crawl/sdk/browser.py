@@ -4,6 +4,8 @@ import asyncio
 import base64
 import io
 import json
+import shutil
+import tempfile
 import time
 from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
@@ -15,6 +17,7 @@ import nodriver.cdp.page as page_cdp
 import nodriver.cdp.security as security_cdp
 import nodriver.cdp.storage as storage_cdp
 import nodriver.core.util as nodriver_util
+import psutil
 
 from .consent import (
     CANDIDATE_SELECTOR,
@@ -42,6 +45,93 @@ def suppress_nodriver_cleanup_output() -> None:
 
 
 suppress_nodriver_cleanup_output()
+
+
+def is_temp_browser_profile_dir(path: str | None) -> bool:
+    """Check whether a path looks like an ephemeral nodriver temp profile.
+
+    Args:
+        path: Candidate profile directory path.
+
+    Returns:
+        ``True`` when the path is a temp nodriver profile directory.
+    """
+    if not path:
+        return False
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return False
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    return resolved.parent == temp_root and resolved.name.startswith("uc_")
+
+
+def cleanup_temp_browser_profile_dir(path: str | None, retries: int = 5) -> None:
+    """Remove an ephemeral browser profile directory.
+
+    Args:
+        path: Candidate profile directory path.
+        retries: Removal retry count.
+    """
+    if not is_temp_browser_profile_dir(path):
+        return
+    target = Path(path)
+    for _ in range(max(1, retries)):
+        try:
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=False)
+            return
+        except Exception:
+            time.sleep(0.2)
+
+
+def cleanup_orphaned_temp_browser_processes() -> int:
+    """Kill orphaned Chrome processes using ephemeral nodriver temp profiles.
+
+    Returns:
+        Number of processes targeted for cleanup.
+    """
+    cleaned = 0
+    for process in psutil.process_iter(["name", "cmdline"]):
+        try:
+            name = (process.info.get("name") or "").lower()
+            if name != "chrome.exe":
+                continue
+            cmdline = process.info.get("cmdline") or []
+            for argument in cmdline:
+                if not argument.startswith("--user-data-dir="):
+                    continue
+                profile_dir = argument.split("=", 1)[1].strip('"')
+                if not is_temp_browser_profile_dir(profile_dir):
+                    continue
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                cleanup_temp_browser_profile_dir(profile_dir)
+                cleaned += 1
+                break
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return cleaned
+
+
+def cleanup_orphaned_temp_browser_profiles() -> int:
+    """Remove stale ephemeral nodriver temp profile directories.
+
+    Returns:
+        Number of profile directories removed.
+    """
+    temp_root = Path(tempfile.gettempdir())
+    cleaned = 0
+    for candidate in temp_root.glob("uc_*"):
+        try:
+            if candidate.is_dir():
+                shutil.rmtree(candidate, ignore_errors=False)
+                cleaned += 1
+        except Exception:
+            continue
+    return cleaned
 
 
 def build_capture_script(
@@ -428,6 +518,8 @@ async def kill_browser(browser) -> None:
     Args:
         browser: Browser instance to stop.
     """
+    config = getattr(browser, "config", None)
+    profile_dir = getattr(config, "user_data_dir", None)
     try:
         for tab in browser.tabs:
             await tab.close()
@@ -436,6 +528,7 @@ async def kill_browser(browser) -> None:
             await asyncio.sleep(0.5)
     except Exception:
         pass
+    cleanup_temp_browser_profile_dir(profile_dir)
 
 
 async def configure_page_request_settings(
@@ -732,6 +825,8 @@ async def browser_session(
         browser_args: Optional browser launch arguments.
         session_dir: Optional persistent browser profile directory.
     """
+    cleanup_orphaned_temp_browser_processes()
+    cleanup_orphaned_temp_browser_profiles()
     resolved_session_dir = None
     cookie_file = None
     if session_dir:
