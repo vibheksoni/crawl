@@ -54,5 +54,5 @@ def serialize_frontier(frontier, strategy: str) -> list[dict]:
         Serialized frontier records.
     """
     if strategy == "best_first":
-        return [{"url": item[2], "depth": item[3]} for item in frontier]
+        return [{"url": item[2], "depth": item[1]} for item in frontier]
     return [{"url": item[0], "depth": item[1]} for item in list(frontier)]

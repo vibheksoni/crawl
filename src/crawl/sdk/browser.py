@@ -9,6 +9,7 @@ import tempfile
 import time
 from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
+from urllib.parse import urlparse
 
 import nodriver as uc
 import nodriver.cdp.fetch as fetch_cdp
@@ -28,7 +29,7 @@ from .consent import (
     is_consent_context,
     score_consent_label,
 )
-from .cookies import build_browser_cookie_params, export_browser_cookies
+from .cookies import build_browser_cookie_params, parse_cookie_header_string
 from .resource_blocking import (
     normalize_blocked_url_patterns,
     resolve_blocked_resource_type_names,
@@ -351,18 +352,23 @@ async def seed_browser_cookies(
     return initial_cookies or []
 
 
-async def collect_browser_cookies(browser) -> list[dict]:
-    """Collect browser cookies as normalized payloads.
+async def collect_browser_cookies(page) -> list[dict]:
+    """Collect browser-visible cookies as normalized payloads.
 
     Args:
-        browser: Browser instance.
+        page: Browser page/tab.
 
     Returns:
         Normalized exported cookie payloads.
     """
-    connection = get_browser_cookie_connection(browser)
-    cookies = await connection.send(storage_cdp.get_cookies())
-    return export_browser_cookies(cookies)
+    cookie_header = await page.evaluate("document.cookie", return_by_value=True)
+    cookies = parse_cookie_header_string(cookie_header or "")
+    parsed_url = urlparse(page.url or "")
+    for cookie in cookies:
+        cookie["domain"] = cookie.get("domain") or parsed_url.hostname or None
+        cookie["path"] = cookie.get("path") or "/"
+        cookie["secure"] = bool(cookie.get("secure")) or parsed_url.scheme == "https"
+    return cookies
 
 
 def is_api_resource_type(resource_type) -> bool:

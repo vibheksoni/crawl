@@ -38,7 +38,7 @@ async def websearch(
     query: str,
     max_results: int = 10,
     pages: int = 1,
-    provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "auto",
     searxng_url: str | None = None,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,

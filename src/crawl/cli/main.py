@@ -67,7 +67,7 @@ def load_json_file(path: str) -> Any:
     Returns:
         Parsed JSON value.
     """
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
 def parse_initial_cookies(
@@ -164,7 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query.")
     search_parser.add_argument("--max-results", type=int, default=10, dest="max_results")
     search_parser.add_argument("--pages", type=int, default=1)
-    search_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="google")
+    search_parser.add_argument("--provider", choices=["google", "searxng", "auto", "hybrid"], default="auto")
     search_parser.add_argument("--searxng-url", dest="searxng_url")
     search_parser.add_argument("--proxy-url", action="append", dest="proxy_urls")
     search_parser.add_argument("--scrape-results", action="store_true", dest="scrape_results")
@@ -1188,6 +1188,12 @@ def main() -> int:
     """
     parser = build_parser()
     args = parser.parse_args()
+    output_file = None if args.command == "tech-import" else getattr(args, "output_file", None)
+    store_fields = getattr(args, "store_fields", None)
+    store_dir = getattr(args, "store_dir", None)
+    output_template = getattr(args, "output_template", None)
+    output_fields = getattr(args, "output_fields", None)
+    jsonl_output = getattr(args, "jsonl", False)
 
     try:
         result = asyncio.run(run_command(args))
@@ -1203,8 +1209,8 @@ def main() -> int:
 
     if isinstance(result, str):
         output_text = result
-        if args.output_file:
-            Path(args.output_file).write_text(output_text, encoding="utf-8")
+        if output_file:
+            Path(output_file).write_text(output_text, encoding="utf-8")
         print(output_text)
         return 0
 
@@ -1217,13 +1223,13 @@ def main() -> int:
                 dataset_dir=args.dataset_dir,
             )
 
-    if args.store_fields:
-        store_selected_fields(result, args.store_fields, store_dir=args.store_dir)
+    if store_fields:
+        store_selected_fields(result, store_fields, store_dir=store_dir)
 
-    if args.output_template:
-        template_fields = len(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", args.output_template))
+    if output_template:
+        template_fields = len(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", output_template))
         if isinstance(result, dict):
-            rendered_result, resolved_fields = render_template_details(result, args.output_template)
+            rendered_result, resolved_fields = render_template_details(result, output_template)
         else:
             rendered_result, resolved_fields = "", 0
 
@@ -1233,30 +1239,30 @@ def main() -> int:
             rows = normalize_output_rows(result)
             rendered_rows = []
             for row in rows:
-                rendered_row, row_resolved_fields = render_template_details(row, args.output_template)
+                rendered_row, row_resolved_fields = render_template_details(row, output_template)
                 if row_resolved_fields > 0:
                     rendered_rows.append(rendered_row)
             rendered = "\n".join(rendered_rows)
-        if args.output_file:
-            Path(args.output_file).write_text(rendered, encoding="utf-8")
+        if output_file:
+            Path(output_file).write_text(rendered, encoding="utf-8")
         print(rendered)
         return 0
 
-    if args.output_fields:
+    if output_fields:
         rows = normalize_output_rows(result)
-        selected_rows = [select_fields(row, args.output_fields) for row in rows]
+        selected_rows = [select_fields(row, output_fields) for row in rows]
         output_data = selected_rows if len(selected_rows) != 1 else selected_rows[0]
     else:
         output_data = result
 
-    if args.jsonl:
+    if jsonl_output:
         rows = normalize_output_rows(output_data if isinstance(output_data, dict) else {"data": output_data})
         rendered = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
     else:
         rendered = json.dumps(output_data, indent=2, ensure_ascii=False)
 
-    if args.output_file:
-        Path(args.output_file).write_text(rendered, encoding="utf-8")
+    if output_file:
+        Path(output_file).write_text(rendered, encoding="utf-8")
     print(rendered)
     return 0
 

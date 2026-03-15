@@ -444,7 +444,7 @@ async def websearch(
     query: str,
     max_results: int = 10,
     pages: int = 1,
-    provider: Literal["google", "searxng", "auto", "hybrid"] = "google",
+    provider: Literal["google", "searxng", "auto", "hybrid"] = "auto",
     searxng_url: str | None = None,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
@@ -876,7 +876,7 @@ async def request_browser_page(
                 await page.sleep(1)
 
         html = await page.get_content()
-        cookies = await collect_browser_cookies(browser) if include_cookies else None
+        cookies = await collect_browser_cookies(page) if include_cookies else None
         requests = await collect_request_capture(page) if capture_requests else []
         api_payloads = await collect_api_payload_capture(page) if capture_api_payloads else []
         return {
@@ -2619,6 +2619,8 @@ async def map_site(
         url=url,
         max_pages=limit,
         mode=mode,
+        crawl_strategy="best_first" if search else "bfs",
+        crawl_query=search,
         initial_cookies=initial_cookies,
         include_cookies=include_cookies,
         max_depth=limit,

@@ -13,8 +13,6 @@ from .article import extract_article_content
 FALLBACK_STATUS_CODES = {403, 429, 503, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530}
 FALLBACK_HTML_MARKERS = (
     "__cf_bm",
-    "access denied",
-    "attention required",
     "captcha",
     "cf-challenge",
     "cf-turnstile",
@@ -22,11 +20,15 @@ FALLBACK_HTML_MARKERS = (
     "cloudflare",
     "data-sitekey",
     "ddos protection",
-    "forbidden",
     "g-recaptcha",
     "hcaptcha",
     "datadome",
     "enable javascript and cookies",
+)
+TITLE_BLOCK_MARKERS = (
+    "access denied",
+    "attention required",
+    "forbidden",
     "just a moment",
     "security check",
     "verify you are human",
@@ -659,6 +661,11 @@ def detect_block_reason(
     for token in ("cloudflare", "akamai", "imperva", "ddos-guard"):
         if token in server_header and any(marker in lowered for marker in ("captcha", "forbidden", "access denied", "just a moment", "verify")):
             return f"server_challenge:{token}"
+
+    for marker in TITLE_BLOCK_MARKERS:
+        escaped = re.escape(marker)
+        if re.search(rf"<title>\s*(?:\d+\s+)?{escaped}\b", lowered) or re.search(rf"<h1[^>]*>\s*(?:\d+\s+)?{escaped}\b", lowered):
+            return f"body_marker:{marker}"
 
     for marker in FALLBACK_HTML_MARKERS:
         if marker in lowered:
