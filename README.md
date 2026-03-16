@@ -359,6 +359,8 @@ Recommended MCP usage:
 - visual confirmation:
   use `capture_screenshot`
 
+Browser-backed SDK operations now accept `headless=True` or `False`. The MCP browser-capable tools also expose a `headless` boolean and default it to `false`.
+
 ## Current Capabilities
 
 - `websearch`: supports Google browser scraping, SearXNG, automatic provider fallback, hybrid merged search, optional proxy routing, and optional scraped content attachment for top results
