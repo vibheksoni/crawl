@@ -322,6 +322,43 @@ After installation, you can also use:
 crawl-mcp
 ```
 
+The MCP layer is intentionally not a one-to-one SDK mirror. It exposes a compact agent-facing surface:
+
+- `search_web`: use first for open-web tasks; supports quick URL discovery and deeper research synthesis over top web results
+- `inspect_url`: default single-page tool for content, metadata, links, headers, app state, article text, forms, contacts, technologies, API payloads, and query-ranked excerpts
+- `discover_site`: bounded site mapping, crawling, feed discovery, or site-level technology aggregation when the task spans multiple pages
+- `extract_structured`: schema-driven structured extraction when the page structure is already understood
+- `capture_screenshot`: visual confirmation for one page when rendered state or layout matters
+
+The MCP server also exposes lightweight guidance primitives so agents do not need more tools for help:
+
+- resources:
+  `crawl://guide/overview`
+  `crawl://guide/workflows`
+  `crawl://guide/extract-schema`
+- resource templates:
+  `crawl://guide/tool/{tool_name}`
+  `crawl://catalog/technology-search/{query}`
+  `crawl://catalog/technology/{name}`
+- prompts:
+  `research_workflow`
+  `extraction_workflow`
+
+This keeps the MCP tool count low while still exposing the broader SDK capability set through focused workflows.
+
+Recommended MCP usage:
+
+- unknown web task:
+  start with `search_web`
+- single known page:
+  start with `inspect_url`
+- many pages on one site:
+  use `discover_site`
+- known structured fields:
+  use `extract_structured`
+- visual confirmation:
+  use `capture_screenshot`
+
 ## Current Capabilities
 
 - `websearch`: supports Google browser scraping, SearXNG, automatic provider fallback, hybrid merged search, optional proxy routing, and optional scraped content attachment for top results
