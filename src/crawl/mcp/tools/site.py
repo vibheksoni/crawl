@@ -9,7 +9,7 @@ from crawl.sdk import feeds as sdk_feeds
 from crawl.sdk import map_site as sdk_map_site
 from crawl.sdk import tech as sdk_tech
 
-from ..config import read_only_annotations
+from ..config import DEFAULT_BROWSER_HEADLESS, read_only_annotations
 from ..helpers import build_cache_kwargs, build_page_kwargs
 from ..models import SiteStrategy
 
@@ -41,6 +41,7 @@ def register_site_tools(mcp: FastMCP) -> None:
         max_depth: int = 1,
         browser: bool = False,
         respect_robots_txt: bool = True,
+        headless: bool = DEFAULT_BROWSER_HEADLESS,
     ) -> dict:
         """Discover a site with one bounded strategy.
 
@@ -52,6 +53,7 @@ def register_site_tools(mcp: FastMCP) -> None:
             max_depth: Maximum traversal depth where applicable.
             browser: Whether the strategy should prefer browser-backed execution.
             respect_robots_txt: Whether site traversal should respect robots.txt.
+            headless: Whether browser launches should be headless.
 
         Returns:
             Site discovery payload.
@@ -63,6 +65,7 @@ def register_site_tools(mcp: FastMCP) -> None:
                 limit=max_pages,
                 mode="auto" if browser else "fast",
                 respect_robots_txt=respect_robots_txt,
+                headless=headless,
                 **build_cache_kwargs(),
             )
         elif strategy == "crawl":
@@ -75,6 +78,7 @@ def register_site_tools(mcp: FastMCP) -> None:
                 crawl_query=query,
                 respect_robots_txt=respect_robots_txt,
                 auto_throttle=True,
+                headless=headless,
                 **build_cache_kwargs(),
             )
         elif strategy == "feeds":
@@ -84,6 +88,7 @@ def register_site_tools(mcp: FastMCP) -> None:
                 spider_depth=max_depth,
                 spider_limit=max_pages,
                 max_feeds=max_pages,
+                headless=headless,
                 **build_cache_kwargs(),
             )
         else:
@@ -91,7 +96,7 @@ def register_site_tools(mcp: FastMCP) -> None:
                 url=url,
                 max_pages=max_pages,
                 max_depth=max_depth,
-                **build_page_kwargs("browser" if browser else "http"),
+                **build_page_kwargs("browser" if browser else "http", headless=headless),
             )
 
         result = dict(payload)

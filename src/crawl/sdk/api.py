@@ -286,6 +286,7 @@ async def attach_scraped_search_results(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -306,6 +307,7 @@ async def attach_scraped_search_results(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless when result scraping falls back to browser mode.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -332,6 +334,7 @@ async def attach_scraped_search_results(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -358,6 +361,7 @@ async def search_google(
     max_results: int = 10,
     pages: int = 1,
     proxy_url: str | None = None,
+    headless: bool = False,
 ) -> dict:
     """Search Google and return normalized results.
 
@@ -366,6 +370,7 @@ async def search_google(
         max_results: Maximum results per page.
         pages: Number of pages to scrape.
         proxy_url: Optional proxy URL.
+        headless: Whether browser launches should be headless.
 
     Returns:
         Search results with links, titles, descriptions, and metadata.
@@ -378,7 +383,7 @@ async def search_google(
     current_page = 0
 
     browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
-    async with browser_session(headless=False, browser_args=browser_args) as browser:
+    async with browser_session(headless=headless, browser_args=browser_args) as browser:
         page_obj = await browser.get(f"https://www.google.com/search?q={quote_plus(query)}")
         await page_obj.sleep(3)
 
@@ -459,6 +464,7 @@ async def websearch(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -483,6 +489,7 @@ async def websearch(
         user_agent: Optional user-agent override for result scraping.
         headers: Optional extra headers for result scraping.
         accept_invalid_certs: Whether to ignore certificate errors for result scraping.
+        headless: Whether browser launches should be headless when result scraping falls back to browser mode.
         max_retries: Maximum retry attempts after the initial request for scraped results.
         retry_backoff_ms: Base retry backoff in milliseconds for scraped results.
 
@@ -509,7 +516,7 @@ async def websearch(
                 searxng_url=searxng_url,
                 proxy_url=selected_proxy,
             ),
-            search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy),
+            search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy, headless=headless),
         )
         search_payload = merge_search_payloads(searxng_result, google_result, max_results=max_results, pages=pages)
     elif provider == "auto":
@@ -522,9 +529,9 @@ async def websearch(
                 proxy_url=selected_proxy,
             )
         except Exception:
-            search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
+            search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy, headless=headless)
     else:
-        search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy)
+        search_payload = await search_google(query=query, max_results=max_results, pages=pages, proxy_url=selected_proxy, headless=headless)
 
     if scrape_results:
         return await attach_scraped_search_results(
@@ -542,6 +549,7 @@ async def websearch(
             accept_invalid_certs=accept_invalid_certs,
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
+            headless=headless,
             max_retries=max_retries,
             retry_backoff_ms=retry_backoff_ms,
         )
@@ -783,6 +791,7 @@ async def request_browser_page(
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
+    headless: bool = False,
     session_dir: str | None = None,
     initial_cookies: list[dict] | None = None,
     include_cookies: bool = False,
@@ -807,6 +816,7 @@ async def request_browser_page(
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional proxy URL.
+        headless: Whether the browser should launch headlessly.
         session_dir: Optional persistent browser profile directory.
         initial_cookies: Optional cookies to seed before navigation.
         include_cookies: Whether to export browser cookies after navigation.
@@ -829,7 +839,7 @@ async def request_browser_page(
     started_at = time.perf_counter()
     browser_args = [f"--proxy-server={proxy_url}"] if proxy_url else None
     async with browser_session(
-        headless=False,
+        headless=headless,
         browser_args=browser_args,
         session_dir=session_dir,
     ) as browser:
@@ -1037,6 +1047,7 @@ async def _fetch_page(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
+    headless: bool = False,
     full_resources: bool = False,
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
@@ -1088,6 +1099,7 @@ async def _fetch_page(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
+        headless: Whether browser launches should be headless.
         full_resources: Whether to include resource URLs in discovery.
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
@@ -1159,6 +1171,7 @@ async def _fetch_page(
                 headers=headers,
                 accept_invalid_certs=accept_invalid_certs,
                 proxy_url=selected_proxy,
+                headless=headless,
                 session_dir=session_dir,
                 initial_cookies=initial_cookies,
                 include_cookies=include_cookies,
@@ -1293,6 +1306,7 @@ async def _fetch_page(
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
+                    headless=headless,
                     session_dir=session_dir,
                     initial_cookies=initial_cookies,
                     include_cookies=include_cookies,
@@ -1323,6 +1337,7 @@ async def _fetch_page(
                     headers=headers,
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=selected_proxy,
+                    headless=headless,
                     session_dir=session_dir,
                     initial_cookies=initial_cookies,
                     include_cookies=include_cookies,
@@ -1478,6 +1493,7 @@ async def fetch_page(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     full_resources: bool = False,
     include_forms: bool = False,
     include_form_fill_suggestions: bool = False,
@@ -1526,6 +1542,7 @@ async def fetch_page(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         full_resources: Whether to include resource URLs in discovery.
         include_forms: Whether to extract forms.
         include_form_fill_suggestions: Whether to include form fill previews.
@@ -1575,6 +1592,7 @@ async def fetch_page(
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         full_resources=full_resources,
         include_forms=include_forms,
         include_form_fill_suggestions=include_form_fill_suggestions,
@@ -1623,6 +1641,7 @@ async def fetch(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     only_main_content: bool = True,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
@@ -1650,6 +1669,7 @@ async def fetch(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         only_main_content: Whether to prefer main content.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
@@ -1678,6 +1698,7 @@ async def fetch(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
         retry_status_codes=retry_status_codes,
@@ -1713,6 +1734,7 @@ async def scrape(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -1746,6 +1768,7 @@ async def scrape(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -1781,6 +1804,7 @@ async def scrape(
         pattern_mode=pattern_mode,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -1815,6 +1839,7 @@ async def scrape(
             accept_invalid_certs=accept_invalid_certs,
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
+            headless=headless,
             max_retries=max_retries,
             retry_backoff_ms=retry_backoff_ms,
         )
@@ -1842,6 +1867,7 @@ async def contacts(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -1867,6 +1893,7 @@ async def contacts(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -1894,6 +1921,7 @@ async def contacts(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -1930,6 +1958,7 @@ async def tech(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     aggression: int = 1,
@@ -1959,6 +1988,7 @@ async def tech(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         aggression: Technology fingerprint aggression level.
@@ -1995,6 +2025,7 @@ async def tech(
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=proxy_url,
                     proxy_urls=proxy_urls,
+                    headless=headless,
                     max_retries=max_retries,
                     retry_backoff_ms=retry_backoff_ms,
                     technology_aggression=aggression,
@@ -2046,6 +2077,7 @@ async def tech(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
         technology_aggression=aggression,
@@ -2091,6 +2123,7 @@ async def tech_grep(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2119,6 +2152,7 @@ async def tech_grep(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2147,6 +2181,7 @@ async def tech_grep(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -2189,6 +2224,7 @@ async def batch_scrape(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2223,6 +2259,7 @@ async def batch_scrape(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2262,6 +2299,7 @@ async def batch_scrape(
                     pattern_mode=pattern_mode,
                     proxy_url=proxy_url,
                     proxy_urls=proxy_urls,
+                    headless=headless,
                     max_retries=max_retries,
                     retry_backoff_ms=retry_backoff_ms,
                 )
@@ -2304,6 +2342,7 @@ async def query_page(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2330,6 +2369,7 @@ async def query_page(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2359,6 +2399,7 @@ async def query_page(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -2452,6 +2493,7 @@ async def research(
     user_agent: str | None = None,
     headers: dict[str, str] | None = None,
     accept_invalid_certs: bool = False,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2474,6 +2516,7 @@ async def research(
         user_agent: Optional user-agent override.
         headers: Optional extra headers.
         accept_invalid_certs: Whether to ignore certificate errors.
+        headless: Whether browser launches should be headless when research falls back to browser mode.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2496,6 +2539,7 @@ async def research(
         user_agent=user_agent,
         headers=headers,
         accept_invalid_certs=accept_invalid_certs,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -2518,6 +2562,7 @@ async def research(
                     accept_invalid_certs=accept_invalid_certs,
                     proxy_url=proxy_url,
                     proxy_urls=proxy_urls,
+                    headless=headless,
                     max_retries=max_retries,
                     retry_backoff_ms=retry_backoff_ms,
                 )
@@ -2578,6 +2623,7 @@ async def map_site(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
     state_path: str | None = None,
@@ -2608,6 +2654,7 @@ async def map_site(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
         state_path: Optional persisted crawl state file.
@@ -2641,6 +2688,7 @@ async def map_site(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
         state_path=state_path,
@@ -2702,6 +2750,7 @@ async def extract(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2728,6 +2777,7 @@ async def extract(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2755,6 +2805,7 @@ async def extract(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -2790,6 +2841,7 @@ async def forms(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     include_fill_suggestions: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
@@ -2816,6 +2868,7 @@ async def forms(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         include_fill_suggestions: Whether to include form fill previews.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
@@ -2846,6 +2899,7 @@ async def forms(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -2882,6 +2936,7 @@ async def article(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -2909,6 +2964,7 @@ async def article(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -2937,6 +2993,7 @@ async def article(
         accept_invalid_certs=accept_invalid_certs,
         proxy_url=proxy_url,
         proxy_urls=proxy_urls,
+        headless=headless,
         max_retries=max_retries,
         retry_backoff_ms=retry_backoff_ms,
     )
@@ -3008,6 +3065,7 @@ async def article(
             accept_invalid_certs=accept_invalid_certs,
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
+            headless=headless,
             max_retries=max_retries,
             retry_backoff_ms=retry_backoff_ms,
         )
@@ -3109,6 +3167,7 @@ async def feeds(
     accept_invalid_certs: bool = False,
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     max_retries: int = 2,
     retry_backoff_ms: int = 500,
 ) -> dict:
@@ -3132,6 +3191,7 @@ async def feeds(
         accept_invalid_certs: Whether to ignore certificate errors.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         max_retries: Maximum retry attempts after the initial request.
         retry_backoff_ms: Base retry backoff in milliseconds.
 
@@ -3166,6 +3226,7 @@ async def feeds(
                 accept_invalid_certs=accept_invalid_certs,
                 proxy_url=proxy_url,
                 proxy_urls=proxy_urls,
+                headless=headless,
                 max_retries=max_retries,
                 retry_backoff_ms=retry_backoff_ms,
             )
@@ -3308,6 +3369,7 @@ async def crawl_one_page(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_index: int = 0,
+    headless: bool = False,
     full_resources: bool = False,
     include_requests: bool = False,
     include_api_payloads: bool = False,
@@ -3354,6 +3416,7 @@ async def crawl_one_page(
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
         proxy_index: Round-robin proxy selection index.
+        headless: Whether browser launches should be headless.
         full_resources: Whether to include resource URLs in discovery.
         include_requests: Whether to capture browser requests.
         include_api_payloads: Whether to capture fetch/XHR response payloads.
@@ -3402,6 +3465,7 @@ async def crawl_one_page(
             proxy_url=proxy_url,
             proxy_urls=proxy_urls,
             proxy_index=proxy_index,
+            headless=headless,
             full_resources=full_resources,
             include_requests=include_requests,
             include_api_payloads=include_api_payloads,
@@ -3465,6 +3529,7 @@ async def crawl(
     pattern_mode: Literal["auto", "substring", "regex", "glob"] = "auto",
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
+    headless: bool = False,
     full_resources: bool = False,
     dedupe_by_signature: bool = False,
     dedupe_by_similarity: bool = False,
@@ -3530,6 +3595,7 @@ async def crawl(
         pattern_mode: Pattern matching mode.
         proxy_url: Optional single proxy URL.
         proxy_urls: Optional proxy URL pool.
+        headless: Whether browser launches should be headless.
         full_resources: Whether to include resource URLs in crawl discovery.
         dedupe_by_signature: Whether to stop expanding duplicate-content pages.
         dedupe_by_similarity: Whether to stop expanding near-duplicate-content pages.
@@ -3820,6 +3886,7 @@ async def crawl(
                         proxy_url=proxy_url,
                         proxy_urls=normalized_proxy_urls,
                         proxy_index=len(results) + batch_index,
+                        headless=headless,
                         full_resources=full_resources,
                         include_requests=include_requests,
                         include_api_payloads=include_api_payloads,
@@ -4003,6 +4070,7 @@ async def crawl(
         "cache_revalidate": cache_revalidate,
         "pattern_mode": pattern_mode,
         "proxy_urls": normalized_proxy_urls,
+        "headless": headless,
         "full_resources": full_resources,
         "dedupe_by_signature": dedupe_by_signature,
         "dedupe_by_similarity": dedupe_by_similarity,
@@ -4051,6 +4119,7 @@ async def screenshot(
     initial_cookies: list[dict] | None = None,
     consent_mode: Literal["none", "auto", "reject", "accept", "close"] = "none",
     max_consent_actions: int = 2,
+    headless: bool = False,
 ) -> bytes:
     """Take a screenshot of a webpage and compress it as JPEG.
 
@@ -4062,6 +4131,7 @@ async def screenshot(
         initial_cookies: Optional cookies to seed before navigation.
         consent_mode: Consent/banner handling mode.
         max_consent_actions: Maximum consent or overlay actions to perform.
+        headless: Whether the browser should launch headlessly.
 
     Returns:
         JPEG-compressed screenshot bytes.
@@ -4070,7 +4140,7 @@ async def screenshot(
     os.close(temp_file_descriptor)
 
     try:
-        async with browser_session(headless=False) as browser:
+        async with browser_session(headless=headless) as browser:
             await seed_browser_cookies(
                 browser,
                 initial_cookies=normalize_cookie_payloads(initial_cookies),

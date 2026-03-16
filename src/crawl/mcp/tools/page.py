@@ -9,7 +9,7 @@ from crawl.sdk import forms as sdk_forms
 from crawl.sdk import query_page as sdk_query_page
 from crawl.sdk import scrape as sdk_scrape
 
-from ..config import DEFAULT_ONLY_MAIN_CONTENT, read_only_annotations
+from ..config import DEFAULT_BROWSER_HEADLESS, DEFAULT_ONLY_MAIN_CONTENT, read_only_annotations
 from ..helpers import (
     build_page_kwargs,
     extract_browser_details,
@@ -59,6 +59,7 @@ def register_page_tools(mcp: FastMCP) -> None:
         query: str | None = None,
         only_main_content: bool = DEFAULT_ONLY_MAIN_CONTENT,
         follow_pagination: bool = False,
+        headless: bool = DEFAULT_BROWSER_HEADLESS,
     ) -> dict:
         """Inspect one page with a focused response shape.
 
@@ -69,12 +70,13 @@ def register_page_tools(mcp: FastMCP) -> None:
             query: Optional relevance question for query-focused extraction.
             only_main_content: Whether content extraction should prefer main content.
             follow_pagination: Whether article extraction should follow likely next-page links.
+            headless: Whether browser launches should be headless.
 
         Returns:
             Focused inspection payload.
         """
         views = normalize_inspect_views(view)
-        page_kwargs = build_page_kwargs(mode)
+        page_kwargs = build_page_kwargs(mode, headless=headless)
         result: dict[str, object] = {
             "url": url,
             "mode": mode,

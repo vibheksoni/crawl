@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 
 from crawl.sdk import extract as sdk_extract
 
-from ..config import read_only_annotations
+from ..config import DEFAULT_BROWSER_HEADLESS, read_only_annotations
 from ..helpers import build_page_kwargs
 from ..models import PageMode
 
@@ -33,6 +33,7 @@ def register_extract_tools(mcp: FastMCP) -> None:
         url: str,
         schema: dict,
         mode: PageMode = "auto",
+        headless: bool = DEFAULT_BROWSER_HEADLESS,
     ) -> dict:
         """Extract structured data from one page.
 
@@ -40,6 +41,7 @@ def register_extract_tools(mcp: FastMCP) -> None:
             url: Page URL to extract from.
             schema: CSS-based extraction schema.
             mode: Fetch mode.
+            headless: Whether browser launches should be headless.
 
         Returns:
             Structured extraction payload.
@@ -47,5 +49,5 @@ def register_extract_tools(mcp: FastMCP) -> None:
         return await sdk_extract(
             url=url,
             schema=schema,
-            **build_page_kwargs(mode),
+            **build_page_kwargs(mode, headless=headless),
         )

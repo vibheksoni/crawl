@@ -7,7 +7,7 @@ from fastmcp import FastMCP
 from crawl.sdk import research as sdk_research
 from crawl.sdk import websearch as sdk_websearch
 
-from ..config import read_only_annotations
+from ..config import DEFAULT_BROWSER_HEADLESS, read_only_annotations
 from ..helpers import build_cache_kwargs
 from ..models import SearchDepth, SearchProvider
 
@@ -41,6 +41,7 @@ def register_search_tools(mcp: FastMCP) -> None:
         include_page_context: bool = False,
         research_limit: int = 5,
         max_concurrency: int = 4,
+        headless: bool = DEFAULT_BROWSER_HEADLESS,
     ) -> dict:
         """Search the web for URLs or run a deeper research pass.
 
@@ -54,6 +55,7 @@ def register_search_tools(mcp: FastMCP) -> None:
             include_page_context: Whether quick search should enrich top results with page context.
             research_limit: Maximum results to read in research mode.
             max_concurrency: Maximum concurrent fetches in research mode.
+            headless: Whether browser launches should be headless.
 
             Returns:
                 Search or research payload.
@@ -67,6 +69,7 @@ def register_search_tools(mcp: FastMCP) -> None:
                 max_concurrency=max_concurrency,
                 provider=provider,
                 searxng_url=searxng_url,
+                headless=headless,
                 **build_cache_kwargs(),
             )
             return {
@@ -92,6 +95,7 @@ def register_search_tools(mcp: FastMCP) -> None:
             scrape_limit=scrape_limit,
             scrape_formats=["metadata", "markdown"] if include_page_context else None,
             only_main_content=True,
+            headless=headless,
             **build_cache_kwargs(),
         )
         return {

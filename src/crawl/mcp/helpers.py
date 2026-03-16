@@ -8,6 +8,7 @@ from typing import Any, Awaitable
 
 from .config import (
     DEFAULT_BROWSER_CONSENT_MODE,
+    DEFAULT_BROWSER_HEADLESS,
     DEFAULT_BROWSER_RESOURCE_MODE,
     DEFAULT_CACHE_ENABLED,
     DEFAULT_CACHE_REVALIDATE,
@@ -29,17 +30,19 @@ def build_cache_kwargs() -> dict[str, object]:
     }
 
 
-def build_page_kwargs(mode: str) -> dict[str, object]:
+def build_page_kwargs(mode: str, headless: bool = DEFAULT_BROWSER_HEADLESS) -> dict[str, object]:
     """Build shared page-inspection kwargs for SDK calls.
 
     Args:
         mode: Requested page mode.
+        headless: Whether browser launches should be headless.
 
     Returns:
         Shared SDK kwargs.
     """
     return {
         "mode": mode,
+        "headless": headless,
         "consent_mode": DEFAULT_BROWSER_CONSENT_MODE,
         "max_consent_actions": 2,
         "resource_mode": DEFAULT_BROWSER_RESOURCE_MODE,

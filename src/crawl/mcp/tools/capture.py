@@ -7,7 +7,7 @@ from fastmcp.utilities.types import Image
 
 from crawl.sdk import screenshot as sdk_screenshot
 
-from ..config import DEFAULT_BROWSER_CONSENT_MODE, read_only_annotations
+from ..config import DEFAULT_BROWSER_CONSENT_MODE, DEFAULT_BROWSER_HEADLESS, read_only_annotations
 
 
 def register_capture_tools(mcp: FastMCP) -> None:
@@ -32,6 +32,7 @@ def register_capture_tools(mcp: FastMCP) -> None:
         full_page: bool = True,
         width: int = -1,
         height: int = -1,
+        headless: bool = DEFAULT_BROWSER_HEADLESS,
     ) -> Image:
         """Capture a screenshot of one page.
 
@@ -40,6 +41,7 @@ def register_capture_tools(mcp: FastMCP) -> None:
             full_page: Whether to capture the full page.
             width: Optional viewport width.
             height: Optional viewport height.
+            headless: Whether the browser should launch headlessly.
 
         Returns:
             Screenshot image payload.
@@ -50,5 +52,6 @@ def register_capture_tools(mcp: FastMCP) -> None:
             height=height,
             full_page=full_page,
             consent_mode=DEFAULT_BROWSER_CONSENT_MODE,
+            headless=headless,
         )
         return Image(data=image_bytes)
