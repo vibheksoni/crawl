@@ -21,6 +21,22 @@ InspectView = Literal[
 ]
 SiteStrategy = Literal["map", "crawl", "feeds", "technologies"]
 
+SUPPORTED_PAGE_MODES = ("auto", "http", "browser")
+SUPPORTED_INSPECT_VIEWS = (
+    "content",
+    "metadata",
+    "links",
+    "html",
+    "headers",
+    "app_state",
+    "article",
+    "contacts",
+    "forms",
+    "technologies",
+    "api_payloads",
+    "requests",
+)
+
 INSPECT_DEFAULT_VIEWS = ("content", "metadata")
 SCRAPE_FORMAT_BY_VIEW = {
     "content": "markdown",

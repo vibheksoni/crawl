@@ -14,10 +14,10 @@ from ..helpers import (
     build_page_kwargs,
     extract_browser_details,
     needs_fetch_page,
+    normalize_page_mode,
     normalize_inspect_views,
     scrape_formats_for_views,
 )
-from ..models import InspectView, PageMode
 
 
 def _set_if_missing(target: dict, key: str, value) -> None:
@@ -46,7 +46,9 @@ def register_page_tools(mcp: FastMCP) -> None:
         description=(
             "Inspect one page and return only the requested sections such as content, metadata, links, forms, contacts, technologies, "
             "browser diagnostics, or query-ranked excerpts. Use this as the default one-page tool before escalating to broader site discovery. "
-            "Keep the requested view list narrow so the response stays high-signal."
+            "Keep the requested view list narrow so the response stays high-signal. "
+            "Supported modes: auto, http, browser. Supported views: content, metadata, links, html, headers, app_state, article, contacts, forms, technologies, api_payloads, requests. "
+            "You may pass one view as a string or multiple views as a list."
         ),
         tags={"page"},
         annotations=read_only_annotations("Inspect one page with focused outputs"),
@@ -54,8 +56,8 @@ def register_page_tools(mcp: FastMCP) -> None:
     )
     async def inspect_url(
         url: str,
-        view: list[InspectView] | None = None,
-        mode: PageMode = "auto",
+        view: str | list[str] | None = None,
+        mode: str = "auto",
         query: str | None = None,
         only_main_content: bool = DEFAULT_ONLY_MAIN_CONTENT,
         follow_pagination: bool = False,
@@ -75,6 +77,7 @@ def register_page_tools(mcp: FastMCP) -> None:
         Returns:
             Focused inspection payload.
         """
+        mode = normalize_page_mode(mode)
         views = normalize_inspect_views(view)
         page_kwargs = build_page_kwargs(mode, headless=headless)
         result: dict[str, object] = {

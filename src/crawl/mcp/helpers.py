@@ -14,7 +14,7 @@ from .config import (
     DEFAULT_CACHE_REVALIDATE,
     DEFAULT_CACHE_TTL_SECONDS,
 )
-from .models import FETCH_PAGE_VIEWS, INSPECT_DEFAULT_VIEWS, SCRAPE_FORMAT_BY_VIEW
+from .models import FETCH_PAGE_VIEWS, INSPECT_DEFAULT_VIEWS, SCRAPE_FORMAT_BY_VIEW, SUPPORTED_INSPECT_VIEWS, SUPPORTED_PAGE_MODES
 
 
 def build_cache_kwargs() -> dict[str, object]:
@@ -50,7 +50,29 @@ def build_page_kwargs(mode: str, headless: bool = DEFAULT_BROWSER_HEADLESS) -> d
     }
 
 
-def normalize_inspect_views(views: Iterable[str] | None) -> list[str]:
+def normalize_page_mode(mode: str | None) -> str:
+    """Normalize and validate a page mode value.
+
+    Args:
+        mode: Requested page mode.
+
+    Returns:
+        Normalized page mode.
+    """
+    value = str(mode or "auto").strip().lower()
+    if value in SUPPORTED_PAGE_MODES:
+        return value
+    if value == "html":
+        supported = ", ".join(SUPPORTED_PAGE_MODES)
+        raise ValueError(
+            f"Unsupported mode '{mode}'. Supported modes: {supported}. "
+            "mode controls fetch strategy, not output format. To return raw HTML, add 'html' to the view list."
+        )
+    supported = ", ".join(SUPPORTED_PAGE_MODES)
+    raise ValueError(f"Unsupported mode '{mode}'. Supported modes: {supported}.")
+
+
+def normalize_inspect_views(views: str | Iterable[str] | None) -> list[str]:
     """Normalize and de-duplicate inspect views.
 
     Args:
@@ -59,13 +81,21 @@ def normalize_inspect_views(views: Iterable[str] | None) -> list[str]:
     Returns:
         Ordered normalized view list.
     """
-    ordered = list(views or INSPECT_DEFAULT_VIEWS)
+    if views is None:
+        ordered = list(INSPECT_DEFAULT_VIEWS)
+    elif isinstance(views, str):
+        ordered = [part.strip() for part in views.split(",") if part.strip()]
+    else:
+        ordered = list(views)
     normalized: list[str] = []
     seen: set[str] = set()
     for item in ordered:
         value = str(item).strip().lower()
         if not value or value in seen:
             continue
+        if value not in SUPPORTED_INSPECT_VIEWS:
+            supported = ", ".join(SUPPORTED_INSPECT_VIEWS)
+            raise ValueError(f"Unsupported view '{item}'. Supported views: {supported}.")
         seen.add(value)
         normalized.append(value)
     return normalized or list(INSPECT_DEFAULT_VIEWS)
