@@ -251,3 +251,5 @@ _ignore
 test*.py
 *.md
 !README.md
+!docs/
+!docs/*.md
